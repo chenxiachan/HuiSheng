@@ -21,6 +21,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var micLevel: Float = 0
     var onLevels: ((Float, Float) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onAudio: ((CMSampleBuffer, TranscriptSource) -> Void)?
 
     func start(options: CaptureOptions, folder: URL) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -100,7 +101,10 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         guard let adjusted = timeline.offset(for: time) else { return }
         do {
-            try writer.append(retimedSample(sampleBuffer, to: adjusted))
+            let aligned = try retimedSample(sampleBuffer, to: adjusted)
+            try writer.append(aligned)
+            if type == .audio { onAudio?(aligned, .system) }
+            if type == .microphone { onAudio?(aligned, .microphone) }
             if type == .audio { systemLevel = audioLevel(sampleBuffer) }
             if type == .microphone { micLevel = audioLevel(sampleBuffer) }
             if (time - lastMeter).seconds > 0.10 {

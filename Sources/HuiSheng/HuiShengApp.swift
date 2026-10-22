@@ -9,11 +9,11 @@ struct HuiShengApp: App {
     var body: some Scene {
         WindowGroup("会声") {
             ContentView(model: model)
-                .frame(minWidth: 1000, minHeight: 740)
+                .frame(minWidth: 1120, minHeight: 740)
                 .preferredColorScheme(.light)
                 .onAppear { delegate.model = model }
         }
-        .defaultSize(width: 1120, height: 800)
+        .defaultSize(width: 1360, height: 850)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -77,14 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, model.busy else { return .terminateNow }
+        guard let model else { return .terminateNow }
+        guard model.busy else { model.workspace.stopAnswer(); model.workspace.flush(); return .terminateNow }
         let alert = NSAlert()
         alert.messageText = model.isRecording ? "录音尚未保存" : "正在处理录音"
         alert.informativeText = model.isRecording ? "结束并保存当前录音后退出？" : "请等当前操作完成后再退出。"
         if model.isRecording {
             alert.addButton(withTitle: "结束并保存"); alert.addButton(withTitle: "继续录音")
             if alert.runModal() == .alertFirstButtonReturn {
-                Task { await model.stop(); sender.reply(toApplicationShouldTerminate: true) }
+                Task { await model.stop(); model.workspace.stopAnswer(); model.workspace.flush(); sender.reply(toApplicationShouldTerminate: true) }
                 return .terminateLater
             }
         } else { alert.addButton(withTitle: "继续等待"); alert.runModal() }

@@ -14,6 +14,9 @@ struct ContentView: View {
         HStack(spacing: 0) {
             sidebar
             Rectangle().fill(line).frame(width: 1)
+            if tab == 3 {
+                MeetingWorkspaceView(workspace: model.workspace, recorder: model)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
@@ -26,10 +29,12 @@ struct ContentView: View {
                     } else { settings }
                 }.padding(32)
             }.background(paper)
+            }
         }
         .foregroundStyle(ink)
         .font(.system(size: 13))
         .tint(accent)
+        .onChange(of: model.phase) { _, phase in if phase == .recording && model.useTranscription { tab = 3 } }
         .alert("会声", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("知道了") { model.message = nil }
         } message: { Text(model.message ?? "") }
@@ -49,6 +54,7 @@ struct ContentView: View {
             }.padding(.top, 38).padding(.bottom, 42)
 
             navigation("开始录音", symbol: "waveform.circle", index: 0)
+            navigation("转录与追问", symbol: "text.bubble", index: 3)
             navigation("我的录音", symbol: "square.stack", index: 1)
             navigation("录音设置", symbol: "slider.horizontal.3", index: 2)
 
@@ -63,11 +69,11 @@ struct ContentView: View {
             Spacer(minLength: 40)
             VStack(alignment: .leading, spacing: 9) {
                 Label("只在本机保存", systemImage: "internaldrive").font(.system(size: 12, weight: .medium)).foregroundStyle(accent)
-                Text("无需账号，也无需上传。\n你的录音，由你保管。")
+                Text("录音和转录留在本机。\n追问可接 API 或本地 Agent。")
                     .font(.system(size: 11)).foregroundStyle(muted).lineSpacing(4)
             }.padding(15).frame(maxWidth: .infinity, alignment: .leading)
                 .background(accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
-            Text("会声  /  本地录音工具  v0.1").font(.system(size: 9)).foregroundStyle(muted).padding(.top, 17)
+            Text("会声  /  会议录音与追问  v0.2").font(.system(size: 9)).foregroundStyle(muted).padding(.top, 17)
         }.padding(.horizontal, 18).padding(.bottom, 22).frame(width: 210).background(Color.white.opacity(0.72))
     }
 
@@ -146,6 +152,7 @@ struct ContentView: View {
                         Spacer()
                         Toggle("录入我的声音", isOn: $model.useMicrophone).labelsHidden().toggleStyle(.switch).controlSize(.small)
                     }
+                    TranscriptionOptionsView(model: model, workspace: model.workspace)
                 }.frame(maxWidth: .infinity).disabled(model.busy)
                 Rectangle().fill(line).frame(width: 1, height: 238)
                 VStack(spacing: 14) {
@@ -158,6 +165,7 @@ struct ContentView: View {
                         meterLegend("麦克风", value: model.micLevel, color: Color(red: 0.70, green: 0.55, blue: 0.32))
                     }
                     controls.padding(.top, 6)
+                    if model.phase == .starting { Button("取消准备") { model.cancelStart() }.font(.caption) }
                     Text(model.isRecording ? (model.phase == .paused ? "已暂停，点击继续恢复录音" : "正在写入本地音轨") : "⌘ ⇧ R  开始 / 结束录音")
                         .font(.system(size: 10)).foregroundStyle(muted)
                 }.frame(width: 265)
@@ -270,6 +278,7 @@ struct ContentView: View {
             if record.status == "interrupted" {
                 Button("恢复导出") { Task { await model.recover(record) } }.font(.system(size: 10)).disabled(model.busy)
             } else { Text(durationText(record.duration)).font(.system(size: 11, design: .monospaced)).foregroundStyle(muted) }
+            Button("查看文字") { model.openTranscript(record); tab = 3 }.font(.system(size: 10)).disabled(model.busy)
             Button { model.reveal(record) } label: { Image(systemName: "folder").foregroundStyle(muted) }.buttonStyle(.plain).help("在访达中显示")
         }.padding(15)
     }

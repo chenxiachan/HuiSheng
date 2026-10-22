@@ -35,6 +35,12 @@ final class RecorderModel: ObservableObject {
     @Published var title = ""
     @Published var sourceID = "all"
     @Published var useMicrophone = true
+    @Published var useTranscription = LiveTranscription.supported
+    @Published var transcriptionLocale = "zh-CN"
+    let workspace = MeetingWorkspaceModel()
+    private var transcription: LiveTranscription?
+    private var preparationTask: Task<Void, Error>?
+    private var startCancelled = false
     @Published var sources: [AudioSource] = []
     @Published var recordings: [Recording] = []
     @Published var folder: URL
@@ -55,6 +61,7 @@ final class RecorderModel: ObservableObject {
     private var activity: NSObjectProtocol?
     private var captureFailure: String?
     private var ticks = 0
+    private var reloadID = UUID()
 
     var busy: Bool { phase != .idle }
     var isRecording: Bool { phase == .recording || phase == .paused }
@@ -122,6 +129,7 @@ final class RecorderModel: ObservableObject {
 
     func start() async {
         guard phase == .idle else { return }
+        startCancelled = false
         phase = .starting; message = nil; captureFailure = nil; stopPlayback()
         elapsed = 0; accumulated = 0; systemLevel = 0; micLevel = 0
         do {
@@ -131,13 +139,36 @@ final class RecorderModel: ObservableObject {
             }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try checkDisk(minimum: 512 * 1024 * 1024)
+            workspace.speechError = nil
+            if useTranscription {
+                let speech = LiveTranscription()
+                speech.onStatus = { [weak self] status in Task { @MainActor in self?.workspace.speechStatus = status } }
+                speech.onFailure = { [weak self] text in Task { @MainActor in self?.workspace.speechError = text } }
+                let locale = transcriptionLocale, microphone = useMicrophone
+                let preparing = Task { try await speech.prepare(locale: locale, microphone: microphone) }
+                preparationTask = preparing
+                do { try await preparing.value; transcription = speech }
+                catch {
+                    if startCancelled { throw CancellationError() }
+                    workspace.speechError = error.localizedDescription; workspace.speechStatus = "本地识别未就绪，正在仅录音"; transcription = nil
+                }
+                preparationTask = nil
+            } else { workspace.speechStatus = "此场会议未启用实时转录" }
+            if startCancelled { throw CancellationError() }
             let name = Recording.safeName(title)
             let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd_HH-mm-ss"
             let folderName = "\(stamp.string(from: Date()))_\(name)_\(UUID().uuidString.prefix(6))"
             let record = Recording(title: name, source: sourceName, microphone: useMicrophone, folderName: folderName)
             current = record
             try persist(record)
+            let previousSpeechError = workspace.speechError
+            workspace.begin(recording: record, directory: folder.appendingPathComponent(folderName))
+            workspace.speechError = previousSpeechError
+            transcription?.onUpdate = { [weak self] update in
+                Task { @MainActor in self?.workspace.receive(update, recordingID: record.id) }
+            }
             let capture = CaptureEngine()
+            if let transcription { capture.onAudio = { [weak transcription] sample, source in transcription?.append(sample, source: source) } }
             capture.onLevels = { [weak self] system, microphone in
                 Task { @MainActor [weak self] in
                     guard let self, self.phase == .recording else { return }
@@ -155,13 +186,16 @@ final class RecorderModel: ObservableObject {
             try await capture.start(options: CaptureOptions(bundleID: sourceID == "all" ? nil : sourceID,
                 microphone: useMicrophone, video: false, displayID: CGMainDisplayID()),
                 folder: folder.appendingPathComponent(folderName).appendingPathComponent("原始音轨"))
+            if startCancelled { throw CancellationError() }
             if let captureFailure { throw RecorderError.message(captureFailure) }
             refreshPermissions()
             activeSince = Date()
             activity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated], reason: "正在录制会议音频")
             phase = .recording
+            if transcription != nil { workspace.speechStatus = "正在本地转录" }
         } catch {
             _ = try? await engine?.stop()
+            await transcription?.cancel(); transcription = nil
             engine = nil
             if var record = current {
                 let directory = folder.appendingPathComponent(record.folderName)
@@ -170,23 +204,33 @@ final class RecorderModel: ObservableObject {
                     record.status = "interrupted"; record.note = error.localizedDescription; try? persist(record)
                 } else {
                     // This directory was created by this failed start and contains no captured media.
+                    workspace.clear()
                     try? FileManager.default.removeItem(at: directory)
                 }
             }
+            preparationTask = nil
             current = nil; phase = .idle; refreshPermissions(); reload()
+            if startCancelled { workspace.speechStatus = "已取消准备，可以重新开始录音。"; return }
             message = "未能开始录音：\(error.localizedDescription)\n首次使用还需要在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许「会声」。授权后若仍失败，请退出并重新打开。"
         }
     }
 
+    func cancelStart() {
+        guard phase == .starting else { return }
+        startCancelled = true; preparationTask?.cancel()
+        workspace.speechStatus = "正在取消准备…"
+    }
     func pauseOrResume() {
         guard isRecording else { return }
         if phase == .recording {
             engine?.setPaused(true)
             accumulated = elapsedNow(); activeSince = nil; elapsed = accumulated
             phase = .paused; systemLevel = 0; micLevel = 0
+            if transcription != nil { workspace.speechStatus = "已暂停 · 不接收新的音频" }
         } else {
             engine?.setPaused(false)
             activeSince = Date(); phase = .recording
+            if transcription != nil { workspace.speechStatus = "正在本地转录" }
         }
     }
 
@@ -200,6 +244,13 @@ final class RecorderModel: ObservableObject {
         }
         do {
             let tracks = try await engine.stop()
+            if let transcription {
+                workspace.isFinalizing = true
+                await transcription.finish(); self.transcription = nil
+                workspace.isFinalizing = false
+                workspace.speechStatus = workspace.speechError == nil ? "转录已保存到本地" : "已保存收到的文字 · 请检查转录提示"
+            }
+            workspace.flush()
             let directory = folder.appendingPathComponent(record.folderName)
             let destination = directory.appendingPathComponent("\(record.title).m4a")
             record.duration = try await MediaExporter.export(tracks: tracks, to: destination, video: false)
@@ -208,6 +259,8 @@ final class RecorderModel: ObservableObject {
             title = ""
             message = reason.map { "\($0)\n已成功保存中断前的录音。" }
         } catch {
+            await transcription?.cancel(); transcription = nil
+            workspace.isFinalizing = false; workspace.flush()
             record.status = "interrupted"; record.duration = elapsed; record.note = error.localizedDescription
             try? persist(record)
             message = "导出未完成：\(error.localizedDescription)\n原始音轨已保留，可在录音列表中尝试「恢复导出」。"
@@ -229,6 +282,10 @@ final class RecorderModel: ObservableObject {
         } catch { message = "恢复失败：\(error.localizedDescription)\n原始文件仍保留在录音文件夹中。" }
     }
 
+    func openTranscript(_ record: Recording) {
+        guard !busy else { return }
+        workspace.open(recording: record, directory: folder.appendingPathComponent(record.folderName))
+    }
     func play(_ record: Recording) {
         guard !busy, let url = fileURL(record) else { return }
         if playingID == record.id { stopPlayback(); return }
@@ -244,19 +301,15 @@ final class RecorderModel: ObservableObject {
     func fileURL(_ record: Recording) -> URL? { record.filename.map { folder.appendingPathComponent(record.folderName).appendingPathComponent($0) } }
 
     func reload() {
-        guard let children = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { recordings = []; return }
-        recordings = children.compactMap { directory in
-            guard let data = try? Data(contentsOf: directory.appendingPathComponent("session.json")),
-                  var record = try? JSONDecoder().decode(Recording.self, from: data),
-                  record.folderName == directory.lastPathComponent,
-                  record.filename == nil || record.filename == URL(fileURLWithPath: record.filename!).lastPathComponent else { return nil }
-            if record.status == "recording", record.id != current?.id { record.status = "interrupted" }
-            if record.status == "interrupted", record.filename == nil {
-                let raw = (try? FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("原始音轨"), includingPropertiesForKeys: nil)) ?? []
-                guard raw.contains(where: { $0.pathExtension == "mov" }) else { return nil }
-            }
-            return record
-        }.sorted { $0.date > $1.date }
+        let requestedFolder = folder, currentID = current?.id, request = UUID()
+        reloadID = request
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .utility) {
+                RecordingLibrary.load(folder: requestedFolder, activeID: currentID)
+            }.value
+            guard let self, self.reloadID == request, self.folder == requestedFolder else { return }
+            self.recordings = loaded
+        }
     }
 
     private func persist(_ record: Recording) throws {
@@ -281,6 +334,25 @@ final class RecorderModel: ObservableObject {
             catch { Task { await stop(reason: error.localizedDescription) } }
         }
         if playingID != nil && player?.isPlaying != true { stopPlayback() }
+    }
+}
+
+// File providers and folder access prompts can block reads. Keep library I/O off the UI thread.
+enum RecordingLibrary {
+    static func load(folder: URL, activeID: UUID?) -> [Recording] {
+        guard let children = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+        return children.compactMap { directory in
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent("session.json")),
+                  var record = try? JSONDecoder().decode(Recording.self, from: data),
+                  record.folderName == directory.lastPathComponent,
+                  record.filename == nil || record.filename == URL(fileURLWithPath: record.filename!).lastPathComponent else { return nil }
+            if record.status == "recording", record.id != activeID { record.status = "interrupted" }
+            if record.status == "interrupted", record.filename == nil {
+                let raw = (try? FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("原始音轨"), includingPropertiesForKeys: nil)) ?? []
+                guard raw.contains(where: { $0.pathExtension == "mov" }) else { return nil }
+            }
+            return record
+        }.sorted { $0.date > $1.date }
     }
 }
 

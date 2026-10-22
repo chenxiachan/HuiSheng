@@ -165,8 +165,9 @@ private func require<T>(_ value: T?) throws -> T { guard let value else { throw 
             tests.testSafeFilenameAndDuration()
             try await tests.testTwoFormatsMixWithOffsetAndPause()
             try await tests.testEmptyExportFailsWithoutCreatingFinalFile()
+            try await FeatureTests().run()
         } catch { fail(error.localizedDescription) }
-        if failureCount == 0 { print("PASS：5 项检查全部通过（含双音轨解码与频谱验证）。") }
+        if failureCount == 0 { print("PASS：全部检查通过（含 5 项音频检查、转录与追问检查）。") }
         exit(failureCount == 0 ? 0 : 1)
     }
 }
