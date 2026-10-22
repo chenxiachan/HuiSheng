@@ -3,7 +3,7 @@ import CoreMedia
 
 enum RecorderError: LocalizedError {
     case message(String)
-    var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
+    var errorDescription: String? { if case .message(let text) = self { return L(text) }; return nil }
 }
 
 /// All access is serialized on CaptureEngine's media queue.
@@ -45,7 +45,7 @@ func retimedSample(_ sample: CMSampleBuffer, to presentation: CMTime) throws -> 
     var result: CMSampleBuffer?
     status = CMSampleBufferCreateCopyWithNewTiming(allocator: kCFAllocatorDefault, sampleBuffer: sample,
         sampleTimingEntryCount: count, sampleTimingArray: &timings, sampleBufferOut: &result)
-    guard status == noErr, let result else { throw RecorderError.message("音视频时间同步失败（\(status)）。") }
+    guard status == noErr, let result else { throw RecorderError.message(LF("音视频时间同步失败（%d）。", status)) }
     return result
 }
 

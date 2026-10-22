@@ -11,7 +11,7 @@ func pcmBuffer(from sample: CMSampleBuffer) throws -> AVAudioPCMBuffer {
     }
     output.frameLength = output.frameCapacity
     let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(output.frameLength), into: output.mutableAudioBufferList)
-    guard status == noErr else { throw RecorderError.message("无法复制转录音频（\(status)）。") }
+    guard status == noErr else { throw RecorderError.message(LF("无法复制转录音频（%d）。", status)) }
     return output
 }
 
@@ -78,11 +78,11 @@ private final class SpeechChannel {
                     onUpdate(TranscriptUpdate(source: source, start: result.range.start.seconds,
                         end: CMTimeRangeGetEnd(result.range).seconds, text: String(result.text.characters), isFinal: result.isFinal))
                 }
-            } catch { if !Task.isCancelled { onFailure("\(source.label)转录中断：\(error.localizedDescription)") } }
+            } catch { if !Task.isCancelled { onFailure(LF("%@转录中断：%@", L(source.label), error.localizedDescription)) } }
         }
         analysisTask = Task {
             do { try await analyzer.start(inputSequence: pair.stream) }
-            catch { if !Task.isCancelled { onFailure("\(source.label)转录输入失败：\(error.localizedDescription)") } }
+            catch { if !Task.isCancelled { onFailure(LF("%@转录输入失败：%@", L(source.label), error.localizedDescription)) } }
         }
 
     }

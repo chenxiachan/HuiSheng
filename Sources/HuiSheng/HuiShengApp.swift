@@ -5,26 +5,25 @@ import Combine
 @main
 struct HuiShengApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @ObservedObject private var language = AppSettings.shared
     @StateObject private var model = RecorderModel()
     var body: some Scene {
-        WindowGroup("会声") {
+        WindowGroup(L("会声")) {
             ContentView(model: model)
                 .frame(minWidth: 1120, minHeight: 740)
-                .preferredColorScheme(.light)
                 .onAppear { delegate.model = model }
         }
         .defaultSize(width: 1360, height: 850)
-        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandMenu("录音") {
-                Button(model.isRecording ? "结束并保存" : "开始录音") {
+            CommandMenu(L("录音")) {
+                Button(model.isRecording ? L("结束并保存") : L("开始录音")) {
                     Task { if model.isRecording { await model.stop() } else { await model.start() } }
                 }.keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(model.phase == .starting || model.phase == .saving)
-                Button("暂停 / 继续") { model.pauseOrResume() }
+                Button(L("暂停 / 继续")) { model.pauseOrResume() }
                     .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!model.isRecording)
-                Button("打开录音文件夹") { model.openFolder() }.keyboardShortcut("o", modifiers: [.command, .shift])
+                Button(L("打开录音文件夹")) { model.openFolder() }.keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
     }
@@ -42,25 +41,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var statusItem: NSStatusItem?
     private var observation: AnyCancellable?
+    private var languageObservation: AnyCancellable?
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        languageObservation = AppSettings.shared.$language.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.updateStatus() }
+        }
         updateStatus()
         NSApp.activate(ignoringOtherApps: true)
     }
     private func updateStatus() {
         guard let statusItem else { return }
+        for window in NSApp.windows where window.canBecomeMain && !(window is NSPanel) {
+            if window.title != L("会声") { window.title = L("会声") }
+        }
         let recording = model?.isRecording == true
         statusItem.button?.title = recording ? "\(model?.phase == .paused ? "Ⅱ" : "●") \(durationText(model?.elapsed ?? 0))" : ""
-        statusItem.button?.image = recording ? nil : NSImage(systemSymbolName: "waveform", accessibilityDescription: "会声")
-        statusItem.button?.toolTip = recording ? "会声正在录音，点击管理" : "会声 · 本地会议录音"
+        statusItem.button?.image = recording ? nil : NSImage(systemSymbolName: "waveform", accessibilityDescription: L("会声"))
+        statusItem.button?.toolTip = recording ? L("会声正在录音，点击管理") : L("会声 · 本地会议录音")
         let menu = NSMenu()
-        let open = menu.addItem(withTitle: "打开会声", action: #selector(showWindow), keyEquivalent: "")
+        let open = menu.addItem(withTitle: L("打开会声"), action: #selector(showWindow), keyEquivalent: "")
         open.target = self
         if recording {
             menu.addItem(.separator())
-            let pause = menu.addItem(withTitle: model?.phase == .paused ? "继续录音" : "暂停录音", action: #selector(togglePause), keyEquivalent: "")
+            let pause = menu.addItem(withTitle: model?.phase == .paused ? L("继续录音") : L("暂停录音"), action: #selector(togglePause), keyEquivalent: "")
             pause.target = self
-            let stop = menu.addItem(withTitle: "结束并保存", action: #selector(stopRecording), keyEquivalent: "")
+            let stop = menu.addItem(withTitle: L("结束并保存"), action: #selector(stopRecording), keyEquivalent: "")
             stop.target = self
         }
         statusItem.menu = menu
@@ -80,15 +86,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model else { return .terminateNow }
         guard model.busy else { model.workspace.stopAnswer(); model.workspace.flush(); return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = model.isRecording ? "录音尚未保存" : "正在处理录音"
-        alert.informativeText = model.isRecording ? "结束并保存当前录音后退出？" : "请等当前操作完成后再退出。"
+        alert.messageText = model.isRecording ? L("录音尚未保存") : L("正在处理录音")
+        alert.informativeText = model.isRecording ? L("结束并保存当前录音后退出？") : L("请等当前操作完成后再退出。")
         if model.isRecording {
-            alert.addButton(withTitle: "结束并保存"); alert.addButton(withTitle: "继续录音")
+            alert.addButton(withTitle: L("结束并保存")); alert.addButton(withTitle: L("继续录音"))
             if alert.runModal() == .alertFirstButtonReturn {
                 Task { await model.stop(); model.workspace.stopAnswer(); model.workspace.flush(); sender.reply(toApplicationShouldTerminate: true) }
                 return .terminateLater
             }
-        } else { alert.addButton(withTitle: "继续等待"); alert.runModal() }
+        } else { alert.addButton(withTitle: L("继续等待")); alert.runModal() }
         return .terminateCancel
     }
 }

@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "会声";
+"CFBundleName" = "会声";
+"NSMicrophoneUsageDescription" = "会声需要访问麦克风，将你的声音与会议声音一起保存到本机。";
+"NSScreenCaptureUsageDescription" = "会声需要屏幕与系统音频录制权限来获取会议声音。本版本只保存音频，不保存屏幕画面。";

@@ -5,7 +5,7 @@ enum QuestionBackend: String, Codable, CaseIterable, Identifiable {
     case api, codex, claude
     var id: String { rawValue }
     var label: String {
-        switch self { case .api: return "OpenAI 兼容 API"; case .codex: return "本地 Codex CLI"; case .claude: return "本地 Claude Code" }
+        switch self { case .api: return L("OpenAI 兼容 API"); case .codex: return L("本地 Codex CLI"); case .claude: return L("本地 Claude Code") }
     }
     var defaultPath: String {
         let name = rawValue
@@ -100,7 +100,7 @@ private final class AgentProcess: @unchecked Sendable {
                 let wasCancelled = lock.withLock { let value = cancelled; process = nil; return value }
                 if wasCancelled { continuation.resume(throwing: CancellationError()); return }
                 guard child.terminationStatus == 0 else {
-                    continuation.resume(throwing: RecorderError.message("Agent 退出（\(child.terminationStatus)）。请检查 CLI 版本和登录状态；需要支持设置中列出的参数。")); return
+                    continuation.resume(throwing: RecorderError.message(LF("Agent 退出（%d）。请检查 CLI 版本和登录状态；需要支持设置中列出的参数。", child.terminationStatus))); return
                 }
                 do {
                     let data = try invocation.output.map { try Data(contentsOf: $0) } ?? capture.data

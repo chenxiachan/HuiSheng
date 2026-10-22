@@ -7,13 +7,13 @@ struct TranscriptLayout {
     init(segments: [TranscriptSegment]) {
         let result = NSMutableAttributedString()
         var spans: [(TranscriptSegment, NSRange)] = []
-        let bodyStyle = NSMutableParagraphStyle(); bodyStyle.lineSpacing = 5; bodyStyle.paragraphSpacing = 16
+        let bodyStyle = NSMutableParagraphStyle(); bodyStyle.lineSpacing = 5; bodyStyle.paragraphSpacing = 8
         for segment in segments {
-            result.append(NSAttributedString(string: "\(durationText(segment.start))  ·  \(segment.source.label)\(segment.isFinal ? "" : " · 识别中")\n", attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor]))
+            result.append(NSAttributedString(string: "\(durationText(segment.start))  ·  \(L(segment.source.label))\(segment.isFinal ? "" : " · " + L("识别中"))\n", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor]))
             let range = NSRange(location: result.length, length: (segment.text as NSString).length)
             result.append(NSAttributedString(string: segment.text + "\n\n", attributes: [
-                .font: NSFont.systemFont(ofSize: 15), .foregroundColor: segment.isFinal ? NSColor.labelColor : NSColor.secondaryLabelColor, .paragraphStyle: bodyStyle]))
+                .font: NSFont.systemFont(ofSize: 18), .foregroundColor: segment.isFinal ? NSColor.labelColor : NSColor.secondaryLabelColor, .paragraphStyle: bodyStyle]))
             spans.append((segment, range))
         }
         text = result; self.spans = spans
@@ -39,6 +39,7 @@ struct TranscriptTextView: NSViewRepresentable {
     var segments: [TranscriptSegment]
     var clearToken: UUID
     var focus: UUID?
+    var language: AppLanguage = .current
     var onSelection: (TranscriptSelection?) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
@@ -51,20 +52,21 @@ struct TranscriptTextView: NSViewRepresentable {
         text.textContainer?.widthTracksTextView = true
         text.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         text.delegate = context.coordinator
-        text.setAccessibilityLabel("会议转录，拖动选择文字后追问")
+        text.setAccessibilityLabel(L("会议转录，拖动选择文字后追问"))
         scroll.documentView = text
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let c = context.coordinator; c.owner = self
         guard let view = scroll.documentView as? NSTextView else { return }
+        view.setAccessibilityLabel(L("会议转录，拖动选择文字后追问"))
         c.updating = true
         defer { c.updating = false }
         if c.clearToken != clearToken { c.clearToken = clearToken; view.setSelectedRange(NSRange(location: 0, length: 0)) }
         // Keep the exact displayed text and range stable while the user selects it.
-        if view.selectedRange().length == 0, c.displayed != segments {
+        if view.selectedRange().length == 0, (c.displayed != segments || c.language != AppLanguage.current) {
             let atBottom = scroll.documentVisibleRect.maxY >= view.bounds.height - 36
-            c.layout = TranscriptLayout(segments: segments); c.displayed = segments
+            c.layout = TranscriptLayout(segments: segments); c.displayed = segments; c.language = .current
             view.textStorage?.setAttributedString(c.layout.text)
             if atBottom { view.scrollRangeToVisible(NSRange(location: max(0, view.string.utf16.count - 1), length: 0)) }
         }
@@ -79,6 +81,7 @@ struct TranscriptTextView: NSViewRepresentable {
         var owner: TranscriptTextView
         var layout = TranscriptLayout(segments: [])
         var displayed: [TranscriptSegment] = []
+        var language: AppLanguage?
         var clearToken: UUID?
         var focus: UUID?
         var updating = false

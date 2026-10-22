@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "HuiSheng";
+"CFBundleName" = "HuiSheng";
+"NSMicrophoneUsageDescription" = "HuiSheng records your microphone alongside meeting audio and saves it on your Mac.";
+"NSScreenCaptureUsageDescription" = "HuiSheng needs screen and system audio recording access to capture meeting audio. It saves audio only, not screen video.";

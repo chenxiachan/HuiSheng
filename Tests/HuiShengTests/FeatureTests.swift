@@ -10,7 +10,33 @@ private func expectFailure(_ message: String, _ work: () throws -> Void) throws 
 }
 
 struct FeatureTests {
+    @MainActor private func testLanguageSwitch() throws {
+        let original = AppSettings.shared.language
+        defer { AppSettings.shared.language = original }
+        let segment = TranscriptSegment(source: .system, start: 1, end: 2, text: "报告 Friday 👩🏽‍💻 保留原文", isFinal: false)
+        let document = MeetingDocument(recordingID: UUID(), segments: [segment])
+        let zh = TranscriptLayout(segments: [segment])
+        let range = (zh.text.string as NSString).range(of: "Friday 👩🏽‍💻")
+        let selected = zh.selection(in: range)!
+        let thread = try document.makeThread(selection: selected, scope: .selection)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let before = try encoder.encode(thread)
+        AppSettings.shared.language = .english
+        try expect(AppLanguage.current == .english && L("开始录音") == "Start recording", "界面语言即时切换并持久保存")
+        try expect(LF("已选 %d 字 · %@", 12, "00:00:01") == "12 characters · 00:00:01", "动态英文文案保留参数")
+        try expect(localizedScope(thread.scope) == "Selected text only · Includes draft text", "旧版追问范围显示英文而不改写快照")
+        let en = TranscriptLayout(segments: [segment])
+        let englishRange = (en.text.string as NSString).range(of: "Friday 👩🏽‍💻")
+        try expect(en.selection(in: englishRange) == selected, "语言改变元数据长度后仍能准确圈选 UTF-16 原文")
+        let after = try encoder.encode(thread)
+        try expect(before == after && en.text.string.contains("Meeting audio"), "语言切换不修改会议或引用")
+        try expect(RecorderError.message("无法播放这份录音。").localizedDescription == "Cannot play this recording.", "错误提示遵循界面语言")
+        AppSettings.shared.language = .chinese
+        try expect(L("开始录音") == "开始录音" && localizedScope(thread.scope) == thread.scope, "支持切回中文")
+        print("PASS：语言切换、持久化、旧版范围显示、跨语言原文圈选。")
+    }
     func run() async throws {
+        try await testLanguageSwitch()
         var document = MeetingDocument(recordingID: UUID())
         document.apply(.init(source: .system, start: 0, end: 2, text: "初稿", isFinal: false))
         let id = document.segments[0].id

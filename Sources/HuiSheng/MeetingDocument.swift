@@ -111,20 +111,20 @@ struct MeetingDocument: Codable {
     }
 
     var plainTranscript: String {
-        segments.map { "[\(durationText($0.start))] \($0.source.label)\($0.isFinal ? "" : "（未定稿）")\n\($0.text)" }.joined(separator: "\n\n")
+        segments.map { "[\(durationText($0.start))] \(L($0.source.label))\($0.isFinal ? "" : L("（未定稿）"))\n\($0.text)" }.joined(separator: "\n\n")
     }
 
     var markdown: String {
-        var value = "# 会议转录\n\n" + plainTranscript + "\n\n# 选段追问\n"
+        var value = "# " + L("会议转录") + "\n\n" + plainTranscript + "\n\n# " + L("选段追问") + "\n"
         for thread in threads {
-            value += "\n## \(durationText(thread.start)) · \(thread.scope)\n\n> " + thread.quote.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
+            value += "\n## \(durationText(thread.start)) · \(localizedScope(thread.scope))\n\n> " + thread.quote.replacingOccurrences(of: "\n", with: "\n> ") + "\n"
             for turn in thread.turns {
-                value += "\n**问：** \(turn.question)\n\n**答：** \(turn.answer)\n"
-                if turn.status != "complete" { value += "\n（\(turn.status == "cancelled" ? "已停止" : "未完成")）\n" }
+                value += "\n**\(L("问："))** \(turn.question)\n\n**\(L("答："))** \(turn.answer)\n"
+                if turn.status != "complete" { value += "\n（\(L(turn.status == "cancelled" ? "已停止" : "未完成"))）\n" }
             }
-            value += "\n引用来源：\n"
+            value += "\n" + L("引用来源：") + "\n"
             for (index, evidence) in thread.evidence.enumerated() {
-                value += "\n- [[\(index + 1)]] \(durationText(evidence.start)) \(evidence.source.label)：\(evidence.text)\n"
+                value += "\n- [[\(index + 1)]] \(durationText(evidence.start)) \(L(evidence.source.label)): \(evidence.text)\n"
             }
         }
         return value

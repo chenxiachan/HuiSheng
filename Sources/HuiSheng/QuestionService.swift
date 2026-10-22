@@ -6,7 +6,7 @@ struct QuestionSettings: Codable, Equatable {
     var agentPath = ""
     var baseURL = "http://127.0.0.1:11434/v1"
     var model = ""
-    var destination: String { if backend != .api { return backend.label }; return URL(string: baseURL)?.host ?? "未配置" }
+    var destination: String { if backend != .api { return backend.label }; return URL(string: baseURL)?.host ?? L("未配置") }
     var isLocal: Bool { ["127.0.0.1", "localhost", "::1", "[::1]"].contains(destination.lowercased()) }
 
     func endpoint(_ path: String) throws -> URL {
@@ -37,7 +37,7 @@ enum APIKeyStore {
         let status = SecItemCopyMatching(parameters as CFDictionary, &result)
         if status == errSecItemNotFound { return "" }
         guard status == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
-            throw RecorderError.message("无法读取钥匙串中的 API 密钥（\(status)）。")
+            throw RecorderError.message(LF("无法读取钥匙串中的 API 密钥（%d）。", status))
         }
         return key
     }
@@ -49,12 +49,12 @@ enum APIKeyStore {
             var item = query.merging(attributes) { _, new in new }
             item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let added = SecItemAdd(item as CFDictionary, nil)
-            guard added == errSecSuccess else { throw RecorderError.message("保存 API 密钥失败（\(added)）。") }
-        } else if status != errSecSuccess { throw RecorderError.message("保存 API 密钥失败（\(status)）。") }
+            guard added == errSecSuccess else { throw RecorderError.message(LF("保存 API 密钥失败（%d）。", added)) }
+        } else if status != errSecSuccess { throw RecorderError.message(LF("保存 API 密钥失败（%d）。", status)) }
     }
     static func remove(for endpoint: String) throws {
         let status = SecItemDelete(query(endpoint) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw RecorderError.message("删除 API 密钥失败（\(status)）。") }
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw RecorderError.message(LF("删除 API 密钥失败（%d）。", status)) }
     }
 }
 
@@ -137,7 +137,7 @@ final class QuestionService {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw RecorderError.message("问答接口返回 HTTP \(code)。请检查接口地址、模型和密钥；未自动重试。")
+            throw RecorderError.message(LF("问答接口返回 HTTP %d。请检查接口地址、模型和密钥；未自动重试。", code))
         }
         var decoder = SSEDecoder(), completed = false, received = false, pending = ""
         var lastDelivery = Date()
@@ -151,7 +151,7 @@ final class QuestionService {
             if let reason = first["finish_reason"] as? String {
                 if reason == "stop" { completed = true }
                 else if reason == "length" { throw RecorderError.message("回答达到模型输出上限，当前内容不完整。") }
-                else { throw RecorderError.message("模型提前结束回答（\(reason)）。") }
+                else { throw RecorderError.message(LF("模型提前结束回答（%@）。", reason)) }
             }
             return (first["delta"] as? [String: Any])?["content"] as? String
         }

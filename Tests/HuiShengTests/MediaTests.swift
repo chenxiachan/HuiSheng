@@ -158,6 +158,7 @@ private func require<T>(_ value: T?) throws -> T { guard let value else { throw 
 
 @main struct VerificationRunner {
     static func main() async {
+        UserDefaults.standard.set("zh-Hans", forKey: "interfaceLanguage")
         let tests = MediaTests()
         do {
             try tests.testPauseRemovesGapAndRejectsStaleSamples()

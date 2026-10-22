@@ -18,7 +18,7 @@ struct Recording: Codable, Identifiable {
     static func safeName(_ value: String) -> String {
         let invalid = CharacterSet(charactersIn: "/\\:\n\r\t").union(.controlCharacters)
         let cleaned = value.components(separatedBy: invalid).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty || cleaned == "." || cleaned == ".." ? "未命名会议" : String(cleaned.prefix(60))
+        return cleaned.isEmpty || cleaned == "." || cleaned == ".." ? L("未命名会议") : String(cleaned.prefix(60))
     }
 }
 
@@ -107,7 +107,7 @@ final class RecorderModel: ObservableObject {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false; panel.canChooseDirectories = true
         panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
-        panel.prompt = "保存到这里"; panel.message = "选择录音保存位置"
+        panel.prompt = L("保存到这里"); panel.message = L("选择录音保存位置")
         if panel.runModal() == .OK, let selected = panel.url {
             stopPlayback(); folder = selected
             UserDefaults.standard.set(selected.path, forKey: "recordingFolder")
@@ -211,7 +211,7 @@ final class RecorderModel: ObservableObject {
             preparationTask = nil
             current = nil; phase = .idle; refreshPermissions(); reload()
             if startCancelled { workspace.speechStatus = "已取消准备，可以重新开始录音。"; return }
-            message = "未能开始录音：\(error.localizedDescription)\n首次使用还需要在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许「会声」。授权后若仍失败，请退出并重新打开。"
+            message = LF("未能开始录音：%@\n首次使用还需要在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许「会声」。授权后若仍失败，请退出并重新打开。", error.localizedDescription)
         }
     }
 
@@ -257,13 +257,13 @@ final class RecorderModel: ObservableObject {
             record.filename = destination.lastPathComponent; record.status = "ready"; record.note = reason
             try persist(record)
             title = ""
-            message = reason.map { "\($0)\n已成功保存中断前的录音。" }
+            message = reason.map { LF("%@\n已成功保存中断前的录音。", $0) }
         } catch {
             await transcription?.cancel(); transcription = nil
             workspace.isFinalizing = false; workspace.flush()
             record.status = "interrupted"; record.duration = elapsed; record.note = error.localizedDescription
             try? persist(record)
-            message = "导出未完成：\(error.localizedDescription)\n原始音轨已保留，可在录音列表中尝试「恢复导出」。"
+            message = LF("导出未完成：%@\n原始音轨已保留，可在录音列表中尝试「恢复导出」。", error.localizedDescription)
         }
     }
 
@@ -279,7 +279,7 @@ final class RecorderModel: ObservableObject {
             updated.duration = try await MediaExporter.export(tracks: tracks, to: destination, video: false)
             updated.filename = destination.lastPathComponent; updated.status = "ready"; updated.note = "已从原始音轨恢复。"
             try persist(updated)
-        } catch { message = "恢复失败：\(error.localizedDescription)\n原始文件仍保留在录音文件夹中。" }
+        } catch { message = LF("恢复失败：%@\n原始文件仍保留在录音文件夹中。", error.localizedDescription) }
     }
 
     func openTranscript(_ record: Recording) {

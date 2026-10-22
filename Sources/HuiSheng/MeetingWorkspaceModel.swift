@@ -49,7 +49,7 @@ final class MeetingWorkspaceModel: ObservableObject {
             selection = nil; question = ""; activeThreadID = loaded.threads.last?.id; speechError = nil
             speechStatus = loaded.segments.isEmpty ? "这份录音尚无转录。启用实时转录后，新录音会自动保存文字。" : "已打开本地会议记录"
             clearSelectionToken = UUID()
-        } catch { self.error = "无法打开会议记录：\(error.localizedDescription)" }
+        } catch { self.error = LF("无法打开会议记录：%@", error.localizedDescription) }
     }
     func receive(_ update: TranscriptUpdate, recordingID: UUID) {
         guard document?.recordingID == recordingID else { return }
@@ -127,8 +127,8 @@ final class MeetingWorkspaceModel: ObservableObject {
     func exportMarkdown() {
         guard let document else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = Recording.safeName(meetingTitle) + "-转录与追问.md"
-        panel.title = "导出转录与追问"
+        panel.nameFieldStringValue = Recording.safeName(meetingTitle) + (AppLanguage.current == .english ? "-transcript.md" : "-转录与追问.md")
+        panel.title = L("导出转录与追问")
         if panel.runModal() == .OK, let url = panel.url {
             do { try document.markdown.write(to: url, atomically: true, encoding: .utf8) }
             catch { self.error = error.localizedDescription }
@@ -138,7 +138,7 @@ final class MeetingWorkspaceModel: ObservableObject {
         saveTask?.cancel(); saveTask = nil
         guard let document, let directory else { return }
         do { try MeetingStore.save(document, in: directory) }
-        catch { self.error = "会议文字保存失败：\(error.localizedDescription)" }
+        catch { self.error = LF("会议文字保存失败：%@", error.localizedDescription) }
     }
     private func scheduleSave() {
         // At most one pending save; don't postpone an existing save indefinitely under continuous updates.

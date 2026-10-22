@@ -5,7 +5,11 @@
 
 Record meeting audio and your microphone as M4A, transcribe on your Mac, then select text to ask follow-up questions beside the transcript. Answers can come from your own API, an on-device model, or a local agent. Recording and transcription require no API key or virtual audio driver.
 
-**Early preview:** the current app interface is in Simplified Chinese. Both English and Chinese documentation are available. v0.2 adds on-device transcription and selection-based Q&A. Screen recording and speaker identification are not included.
+**Early preview:** v0.3 has a simplified native macOS interface, larger type, and instant Chinese / English switching. Recording, on-device transcription, and anchored Q&A are included; screen recording and speaker identification are not.
+
+![English interface with synthetic meeting text and mock answers](docs/assets/interface-en.jpg)
+
+*Interface example: synthetic transcript and mock answers, not a real meeting or model evaluation.*
 
 ## Features
 
@@ -35,21 +39,27 @@ The initial build was tested on macOS 26.5.2 with Swift 6.3.3. Earlier supported
 
 ## Install
 
-Download `HuiSheng-v0.2.0-macOS-arm64.zip` from the [v0.2.0 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.2.0), unzip it, and move `会声-v0.2.app` to Applications.
+Download `HuiSheng-v0.3.0-macOS-arm64.zip` from the [v0.3.0 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.3.0), unzip it, and move `会声-v0.3.app` to Applications.
 
 This preview is ad-hoc signed and **not notarized by Apple**. macOS may block a downloaded build; building from source is the alternative for this release.
+
+## Interface language
+
+Use **中文 / English** at the bottom of the sidebar, or **Settings → Interface language**. Changes apply immediately and persist after restart. Speech language is a separate recording option. Switching the interface does not translate or replace meeting text, selected passages, or existing answers. System-managed dialogs and standard macOS menus may follow the system language.
+
+The interface uses system colors and appearance, 16 pt main interface text, and 18 pt transcript and answer text. Recording guidance and context-sharing details are available in disclosures instead of persistent banners.
 
 ## Record a meeting
 
 1. Open your meeting client and join the meeting.
-2. In HuiSheng, choose **全部系统声音** (all system audio), or select the meeting application.
-3. Turn **录入我的声音** (include my microphone) on or off before recording.
-4. Click **开始录音** (start). Allow the requested permissions in **System Settings → Privacy & Security**. If capture still fails after permission is granted, quit and reopen HuiSheng.
-5. Check the meeting and microphone level indicators. Pause or resume as needed, then click **结束并保存** (stop and save).
+2. In HuiSheng, choose **All system audio**, or select the meeting application.
+3. Turn **Include microphone** on or off before recording.
+4. Click **Start recording**. Allow the requested permissions in **System Settings → Privacy & Security**. If capture still fails after permission is granted, quit and reopen HuiSheng.
+5. Check the meeting and microphone level indicators. Pause or resume as needed, then click **Stop & Save**.
 
 When enabling live transcription, choose a language before starting. Recording begins after speech preparation; preparation can be cancelled. A transcription failure is displayed and recording continues independently.
 
-Recordings are saved to `~/Movies/会声` by default. Change the destination in the recording panel or settings. Each meeting has its own folder with a final `.m4a` file, original tracks, `session.json` metadata, and a `meeting.json` transcript/discussion document. The library shows recordings in the selected storage folder.
+Recordings are saved to `~/Movies/会声` by default. Change the destination in Settings. Each meeting has its own folder with a final `.m4a` file, original tracks, `session.json` metadata, and a `meeting.json` transcript/discussion document. The library shows recordings in the selected storage folder.
 
 | Shortcut | Action |
 | --- | --- |
@@ -59,9 +69,9 @@ Recordings are saved to `~/Movies/会声` by default. Change the destination in 
 
 ## Live transcription and anchored questions
 
-1. Start recording and open **转录与追问**. Text updates in place; provisional text is labeled “识别中” (recognizing) and can also be selected. The recognizer finalizes naturally without forced phrase boundaries.
+1. Start recording and open **Transcript & Q&A**. Text updates in place; provisional text is labeled “Draft” and can also be selected. The recognizer finalizes naturally without forced phrase boundaries.
 2. Drag to select a sentence or text across paragraphs. The default is **selected text only**; explicitly choose nearby paragraphs (two on each side) or all currently available text if needed.
-3. Click **追问选中内容** and ask in the right pane. Configure the answer backend using the settings button first.
+3. Click **Ask about selection** and ask in the right pane. Configure the answer backend using the settings button first.
 4. Continue the discussion around the same quotation. Its evidence is a fixed snapshot; new transcript content never expands that discussion automatically. Discussions containing provisional text are labeled; later corrections do not rewrite their original quotations. Expand the evidence disclosure to inspect the actual material.
 5. Click a citation or evidence item to return to its paragraph. Stopping preserves received text, but incomplete answers are excluded from subsequent request history. Export the transcript and discussions as Markdown from the toolbar.
 
@@ -100,7 +110,7 @@ Real calls in Tencent Meeting, Teams, and Zoom have **not yet been individually 
 - Audio processing and file export happen locally. If you choose a folder synchronized by iCloud, Dropbox, or another service, that service may sync the files independently.
 - Starting requires about 512 MiB of free space. The app attempts to stop and save if available space drops below about 100 MiB. Export also requires additional space.
 - Original tracks remain after export, so storage use exceeds the final M4A size. Manage files in Finder.
-- After an interruption, **恢复导出** (recover export) can attempt to rebuild a recording from readable original tracks. Recovery after a crash or power loss is not guaranteed.
+- After an interruption, **Recover export** can attempt to rebuild a recording from readable original tracks. Recovery after a crash or power loss is not guaranteed.
 
 ## Build from source
 
@@ -127,13 +137,15 @@ The standalone runner works with Command Line Tools; a full Xcode installation i
 4. Encoding, mixing, export, and decoding of 48 kHz stereo and delayed 44.1 kHz mono inputs, with frequency checks before and after a pause.
 5. Empty-input export failure without a final output file.
 
-Additional checks cover native UTF-16 selection, selection-only isolation, evidence snapshots, restart recovery, real loopback HTTP/SSE with split UTF-8, interrupted responses, HTTP 401, redirects, model errors, cancellation, and simulated CLI input/output and termination. Mock backends do not invoke real models.
+Additional checks cover persisted interface-language switching, legacy scope labels, unchanged quotation snapshots and UTF-16 selection across languages, native UTF-16 selection, selection-only isolation, evidence snapshots, restart recovery, real loopback HTTP/SSE with split UTF-8, interrupted responses, HTTP 401, redirects, model errors, cancellation, and simulated CLI input/output and termination. Mock backends do not invoke real models.
 
 Run the opt-in on-device speech integration check on macOS 26+ (Apple models may download on first use; requires the system Tingting and Samantha voices):
 
 ```bash
 bash scripts/speech-check.sh
 ```
+
+v0.3 was checked in native windows in both interface languages, including immediate menu refresh, preserved text selection and question history, settings sheets, and language persistence after restart.
 
 v0.2 was checked on this Mac with actual Chinese/English synthesized-speech recognition, both input tracks, live provisional updates, native selection, API/mock-agent discussions, and reopening history. German accuracy, real cloud-model responses, signed-in CLI model answers, long dual-track recordings, and individual meeting platforms have not been fully validated.
 
