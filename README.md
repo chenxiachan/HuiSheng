@@ -42,7 +42,7 @@ The initial build was tested on macOS 26.5.2 with Swift 6.3.3. Earlier supported
 
 ## Install
 
-Download `HuiSheng-v0.4.0-macOS-arm64.zip` from the [v0.4.0 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.4.0), unzip it, and move `会声-v0.4.app` to Applications.
+Download `HuiSheng-v0.4.1-macOS-arm64.zip` from the [v0.4.1 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.4.1), unzip it, and move `会声-v0.4.1.app` to Applications.
 
 This preview is ad-hoc signed and **not notarized by Apple**. macOS may block a downloaded build; building from source is the alternative for this release.
 

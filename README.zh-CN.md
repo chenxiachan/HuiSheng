@@ -42,7 +42,7 @@
 
 ## 安装
 
-从 [v0.4.0 预览版发布页](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.4.0) 下载 `HuiSheng-v0.4.0-macOS-arm64.zip`，解压后将 `会声-v0.4.app` 拖到「应用程序」文件夹。
+从 [v0.4.1 预览版发布页](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.4.1) 下载 `HuiSheng-v0.4.1-macOS-arm64.zip`，解压后将 `会声-v0.4.1.app` 拖到「应用程序」文件夹。
 
 预览版使用临时签名，**尚未经过 Apple 公证**。macOS 可能拦截下载的应用；本版本也可通过源码在本机构建。
 

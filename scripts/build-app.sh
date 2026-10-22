@@ -9,7 +9,7 @@ mkdir -p "$DESTINATION/Contents/MacOS" "$DESTINATION/Contents/Resources"
 cp "$BIN/HuiSheng" "$DESTINATION/Contents/MacOS/HuiSheng"
 cp -R "$ROOT/resources/en.lproj" "$ROOT/resources/zh-Hans.lproj" "$DESTINATION/Contents/Resources/"
 swift "$ROOT/scripts/make-icon.swift" "$BUILD_DIR/AppIcon.iconset"
-iconutil -c icns "$BUILD_DIR/AppIcon.iconset" -o "$DESTINATION/Contents/Resources/AppIcon.icns"
+iconutil -c icns "$BUILD_DIR/AppIcon.iconset" -o "$DESTINATION/Contents/Resources/AppIconFamily.icns"
 cat > "$DESTINATION/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -18,10 +18,10 @@ cat > "$DESTINATION/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>local.huisheng.recorder</string>
 <key>CFBundleName</key><string>会声</string>
 <key>CFBundleDisplayName</key><string>会声</string>
-<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleIconFile</key><string>AppIconFamily</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.4.0</string>
-<key>CFBundleVersion</key><string>4</string>
+<key>CFBundleShortVersionString</key><string>0.4.1</string>
+<key>CFBundleVersion</key><string>5</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>会声需要访问麦克风，将你的声音与会议声音一起保存到本机。</string>

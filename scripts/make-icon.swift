@@ -1,5 +1,12 @@
 import AppKit
 
+// Shared family palette with ThoughtDAG / TextFold: warm white, violet and amber.
+func color(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
+    NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
+            green: CGFloat((hex >> 8) & 0xff) / 255,
+            blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
+}
+
 let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 let variants = [(16, "icon_16x16.png"), (32, "icon_16x16@2x.png"), (32, "icon_32x32.png"),
@@ -14,14 +21,17 @@ for (size, name) in variants {
     let transform = AffineTransform(scale: Double(size) / 1024)
     (transform as NSAffineTransform).concat()
     let background = NSBezierPath(roundedRect: NSRect(x: 50, y: 50, width: 924, height: 924), xRadius: 218, yRadius: 218)
-    NSGradient(starting: NSColor(red: 0.12, green: 0.46, blue: 0.38, alpha: 1),
-        ending: NSColor(red: 0.06, green: 0.27, blue: 0.24, alpha: 1))!.draw(in: background, angle: -70)
+    NSGradient(starting: color(0xFFFFFF), ending: color(0xF0EDFA))!.draw(in: background, angle: -70)
+    let rim = NSBezierPath(roundedRect: NSRect(x: 58, y: 58, width: 908, height: 908), xRadius: 210, yRadius: 210)
+    color(0xFFFFFF, alpha: 0.9).setStroke(); rim.lineWidth = 3; rim.stroke()
     let heights: [CGFloat] = [115, 220, 390, 510, 325, 200, 95]
     for (index, height) in heights.enumerated() {
         let x = CGFloat(242 + index * 90)
-        let wave = NSBezierPath(); wave.lineWidth = 42; wave.lineCapStyle = .round
-        wave.move(to: NSPoint(x: x, y: 512 - height / 2)); wave.line(to: NSPoint(x: x, y: 512 + height / 2))
-        NSColor(red: 0.88, green: 0.98, blue: 0.88, alpha: index == 6 ? 0.6 : 1).setStroke(); wave.stroke()
+        let wave = NSBezierPath(roundedRect: NSRect(x: x - 21, y: 512 - height / 2 - 21, width: 42, height: height + 42), xRadius: 21, yRadius: 21)
+        let alpha: CGFloat = index == 0 ? 0.4 : index == 1 ? 0.65 : 1
+        let top = index == 6 ? color(0xF2A45F) : color(0x8175F0, alpha: alpha)
+        let bottom = index == 6 ? color(0xD8742D) : color(0x5847D7, alpha: alpha)
+        NSGradient(starting: bottom, ending: top)!.draw(in: wave, angle: 90)
     }
     NSGraphicsContext.restoreGraphicsState()
     try bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(name))
