@@ -20,7 +20,7 @@ struct HuiShengApp: App {
                 Button(model.isRecording ? L("结束并保存") : L("开始录音")) {
                     Task { if model.isRecording { await model.stop() } else { await model.start() } }
                 }.keyboardShortcut("r", modifiers: [.command, .shift])
-                    .disabled(model.phase == .starting || model.phase == .saving)
+                    .disabled(model.busy && !model.isRecording)
                 Button(L("暂停 / 继续")) { model.pauseOrResume() }
                     .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!model.isRecording)
                 Button(L("打开录音文件夹")) { model.openFolder() }.keyboardShortcut("o", modifiers: [.command, .shift])

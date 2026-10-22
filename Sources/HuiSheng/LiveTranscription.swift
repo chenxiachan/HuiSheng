@@ -20,12 +20,20 @@ final class LiveTranscription {
     var onStatus: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
     private var pipeline: AnyObject?
+    private var whisper: WhisperLiveTranscription?
 
     static var supported: Bool {
         if #available(macOS 26.0, *) { return SpeechTranscriber.isAvailable }
         return false
     }
 
+    func prepare(settings: TranscriptionSettings, microphone: Bool) async throws {
+        await ExecutableLocator.refresh()
+        let settings = try settings.validated()
+        if settings.engine == .apple { try await prepare(locale: settings.language, microphone: microphone); return }
+        whisper = try WhisperLiveTranscription(settings: settings, onUpdate: { [weak self] in self?.onUpdate?($0) }, onFailure: { [weak self] in self?.onFailure?($0) })
+        onStatus?("Whisper 已就绪，自动按语音片段更新。")
+    }
     func prepare(locale: String, microphone: Bool) async throws {
         guard #available(macOS 26.0, *), SpeechTranscriber.isAvailable else {
             throw RecorderError.message("本地实时转录需要支持 SpeechTranscriber 的 macOS 26 或更新版本；录音仍可单独使用。")
@@ -37,13 +45,16 @@ final class LiveTranscription {
     }
 
     func append(_ sample: CMSampleBuffer, source: TranscriptSource) {
+        if let whisper { whisper.append(sample, source: source); return }
         if #available(macOS 26.0, *), let pipeline = pipeline as? SpeechPipeline { pipeline.append(sample, source: source) }
     }
     func finish() async {
+        if let whisper { await whisper.finish(); self.whisper = nil; return }
         if #available(macOS 26.0, *), let pipeline = pipeline as? SpeechPipeline { await pipeline.finish() }
         pipeline = nil
     }
     func cancel() async {
+        if let whisper { await whisper.cancel(); self.whisper = nil; return }
         if #available(macOS 26.0, *), let pipeline = pipeline as? SpeechPipeline { await pipeline.cancel() }
         pipeline = nil
     }

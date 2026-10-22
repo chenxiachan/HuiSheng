@@ -37,6 +37,7 @@ struct FeatureTests {
     }
     func run() async throws {
         try await testLanguageSwitch()
+        try await LocalSpeechTests.run()
         var document = MeetingDocument(recordingID: UUID())
         document.apply(.init(source: .system, start: 0, end: 2, text: "初稿", isFinal: false))
         let id = document.segments[0].id

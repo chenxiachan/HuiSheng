@@ -41,13 +41,14 @@ final class MeetingWorkspaceModel: ObservableObject {
         selection = nil; activeThreadID = nil; question = ""; speechError = nil; error = nil
         clearSelectionToken = UUID(); scheduleSave()
     }
-    func open(recording: Recording, directory: URL) {
+    func open(recording: Recording, directory: URL, flushCurrent: Bool = true) {
         do {
+            if flushCurrent { stopAnswer(); flush() }
+            else { saveTask?.cancel(); saveTask = nil }
             let loaded = try MeetingStore.load(in: directory, recordingID: recording.id)
-            stopAnswer(); flush()
             self.directory = directory; meetingTitle = recording.title; document = loaded
             selection = nil; question = ""; activeThreadID = loaded.threads.last?.id; speechError = nil
-            speechStatus = loaded.segments.isEmpty ? "这份录音尚无转录。启用实时转录后，新录音会自动保存文字。" : "已打开本地会议记录"
+            speechStatus = loaded.segments.isEmpty ? "这份录音尚无转录，可在「我的录音」中选择「转为文字」。" : "已打开本地会议记录"
             clearSelectionToken = UUID()
         } catch { self.error = LF("无法打开会议记录：%@", error.localizedDescription) }
     }

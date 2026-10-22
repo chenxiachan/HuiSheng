@@ -203,14 +203,11 @@ struct TranscriptionOptionsView: View {
     @ObservedObject private var language = AppSettings.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Toggle(L("实时转录"), isOn: $model.useTranscription).toggleStyle(.switch).disabled(model.busy || !LiveTranscription.supported)
+            Toggle(L("实时转录"), isOn: $model.useTranscription).toggleStyle(.switch).disabled(model.busy)
             if model.useTranscription {
-                Picker(L("识别语言"), selection: $model.transcriptionLocale) {
-                    Text("中文").tag("zh-CN"); Text("English").tag("en-US"); Text("Deutsch").tag("de-DE")
-                }.disabled(model.busy)
-            }
-            if !LiveTranscription.supported {
-                Text(L("实时转录需要 macOS 26 与支持的 Apple Silicon Mac。")).font(.system(size: 14)).foregroundStyle(.secondary)
+                SpeechSettingsView(settings: $model.transcriptionSettings).disabled(model.busy)
+            } else {
+                Text(L("只录音，结束后可在录音列表中转录。")).font(.system(size: 14)).foregroundStyle(.secondary)
             }
             if model.phase == .starting { Text(L(workspace.speechStatus)).font(.system(size: 14)).foregroundStyle(.secondary) }
             if let error = workspace.speechError { Text(L(error)).font(.system(size: 14)).foregroundStyle(.orange) }

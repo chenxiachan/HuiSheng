@@ -9,12 +9,30 @@ struct QuestionSettingsView: View {
     @State private var key = ""
     @State private var error: String?
     @State private var hasKey = false
+    @State private var discovered: [QuestionBackend: String] = [:]
+    @State private var scanning = false
+    init(workspace: MeetingWorkspaceModel) {
+        self.workspace = workspace
+        _draft = State(initialValue: workspace.settings)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text(L("追问设置")).font(.system(size: 24, weight: .semibold))
             Picker(L("回答方式"), selection: $draft.backend) {
                 ForEach(QuestionBackend.allCases) { Text($0.label).tag($0) }
             }.pickerStyle(.segmented).id(language.language)
+            HStack(spacing: 12) {
+                Text(L("本机 Agent")).foregroundStyle(.secondary)
+                ForEach([QuestionBackend.codex, .claude]) { backend in
+                    if discovered[backend] != nil {
+                        Button(backend == .codex ? "Codex" : "Claude Code") { draft.backend = backend }
+                    }
+                }
+                if discovered.isEmpty { Text(L(scanning ? "正在查找…" : "未找到已安装的 Agent")).font(.system(size: 14)).foregroundStyle(.secondary) }
+                Spacer()
+                Button { Task { await discover() } } label: { Image(systemName: "arrow.clockwise") }
+                    .help(L("重新查找")).disabled(scanning)
+            }
             if draft.backend == .api {
                 HStack {
                     Button("Ollama") { draft.baseURL = "http://127.0.0.1:11434/v1"; draft.model = "" }
@@ -31,14 +49,16 @@ struct QuestionSettingsView: View {
                     if hasKey { Button(L("删除密钥")) { do { try APIKeyStore.remove(for: draft.baseURL); hasKey = false; key = "" } catch { self.error = error.localizedDescription } } }
                 }.font(.system(size: 14))
             } else {
-                field("Agent 路径") {
+                Text(L(ExecutableLocator.executable(draft.agentPath) ? "已找到本地 Agent" : "请安装 CLI，或在路径设置中选择程序。"))
+                    .foregroundStyle(.secondary)
+                DisclosureGroup(L("Agent 路径")) {
                     HStack {
                         TextField(L("可执行文件的绝对路径"), text: $draft.agentPath)
                         Button(L("选择…")) {
                             let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.title = L("选择 Agent")
                             if panel.runModal() == .OK, let url = panel.url { draft.agentPath = url.path }
                         }
-                    }
+                    }.padding(.top, 8)
                 }
                 field("模型") { TextField(L("可选，留空使用 CLI 默认模型"), text: $draft.model) }
                 Text(L("请先安装并在终端登录 CLI。Agent 完成后显示回答。"))
@@ -57,12 +77,23 @@ struct QuestionSettingsView: View {
                 Button(L("保存")) { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }.font(.system(size: 16)).textFieldStyle(.roundedBorder).controlSize(.large).padding(28).frame(width: 650)
-        .onAppear { draft = workspace.settings; if draft.agentPath.isEmpty && draft.backend != .api { draft.agentPath = draft.backend.defaultPath }; refreshKey() }
+        .onAppear { if draft.agentPath.isEmpty && draft.backend != .api { draft.agentPath = draft.backend.defaultPath }; refreshKey() }
+        .task { await discover() }
         .onChange(of: draft.backend) { _, value in
             if value != .api { draft.agentPath = value.defaultPath }
             draft.model = ""; error = nil
         }
         .onChange(of: draft.baseURL) { _, _ in key = ""; refreshKey() }
+    }
+    private func discover() async {
+        scanning = true
+        await ExecutableLocator.refresh()
+        discovered = [:]
+        for backend in [QuestionBackend.codex, .claude] {
+            if let path = ExecutableLocator.locate(backend.rawValue) { discovered[backend] = path }
+        }
+        if draft.backend != .api, draft.agentPath.isEmpty { draft.agentPath = discovered[draft.backend] ?? "" }
+        scanning = false
     }
     private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) { Text(L(title)).fontWeight(.medium); content() }
@@ -75,7 +106,7 @@ struct QuestionSettingsView: View {
             if draft.backend == .api {
                 _ = try draft.endpoint("chat/completions")
                 if !key.isEmpty { try APIKeyStore.save(key, for: draft.baseURL) }
-            } else if !FileManager.default.isExecutableFile(atPath: draft.agentPath) {
+            } else if !ExecutableLocator.executable(draft.agentPath) {
                 throw RecorderError.message("所选路径不是可执行文件。请先安装对应 CLI。")
             }
             try draft.save(); workspace.settings = draft; dismiss()

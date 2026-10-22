@@ -8,20 +8,22 @@ enum QuestionBackend: String, Codable, CaseIterable, Identifiable {
         switch self { case .api: return L("OpenAI 兼容 API"); case .codex: return L("本地 Codex CLI"); case .claude: return L("本地 Claude Code") }
     }
     var defaultPath: String {
-        let name = rawValue
-        let candidates = [NSHomeDirectory() + "/.local/bin/" + name, "/opt/homebrew/bin/" + name, "/usr/local/bin/" + name]
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) ?? candidates[1]
+        ExecutableLocator.locate(rawValue) ?? ""
     }
 }
 
-struct AgentInvocation {
+struct LocalCommandInvocation {
     var executable: URL
     var arguments: [String]
     var input: Data
     var output: URL?
-    static func make(settings: QuestionSettings, messages: [QuestionMessage], directory: URL) throws -> Self {
+    var failureMessage = "本地程序未能完成。请检查安装、模型或登录状态。"
+}
+
+enum AgentInvocation {
+    static func make(settings: QuestionSettings, messages: [QuestionMessage], directory: URL) throws -> LocalCommandInvocation {
         let path = settings.agentPath.isEmpty ? settings.backend.defaultPath : settings.agentPath
-        guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else {
+        guard path.hasPrefix("/"), ExecutableLocator.executable(path) else {
             throw RecorderError.message("找不到 Agent 可执行文件。请在问答设置中选择已安装的 CLI，并先在终端完成登录。")
         }
         let prompt = messages.map { "<\($0.role)>\n\($0.content)\n</\($0.role)>" }.joined(separator: "\n\n")
@@ -42,13 +44,13 @@ struct AgentInvocation {
                     "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk", "--setting-sources", ""]
             if !settings.model.isEmpty { args += ["--model", settings.model] }
         }
-        return Self(executable: URL(fileURLWithPath: path), arguments: args, input: Data(prompt.utf8), output: output)
+        return LocalCommandInvocation(executable: URL(fileURLWithPath: path), arguments: args, input: Data(prompt.utf8), output: output)
     }
 }
 
 // The app launches an executable directly; no prompt or path is interpreted by a shell.
 // All process state is protected by the lock. Pipe readers run off the main thread.
-private final class AgentProcess: @unchecked Sendable {
+final class LocalCommandProcess: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
@@ -64,7 +66,7 @@ private final class AgentProcess: @unchecked Sendable {
             }
         }
     }
-    func run(_ invocation: AgentInvocation, directory: URL) async throws -> String {
+    func run(_ invocation: LocalCommandInvocation, directory: URL, diagnostics: ((Data) -> Void)? = nil) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async { [self] in
                 let child = Process(), input = Pipe(), output = Pipe(), errors = Pipe()
@@ -73,9 +75,7 @@ private final class AgentProcess: @unchecked Sendable {
                 child.standardInput = input; child.standardOutput = output; child.standardError = errors
                 // An incompatible CLI may exit before reading stdin. Never let SIGPIPE kill the recorder.
                 _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
-                var environment = ProcessInfo.processInfo.environment
-                environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + NSHomeDirectory() + "/.local/bin"
-                child.environment = environment
+                child.environment = ExecutableLocator.environment(for: invocation.executable)
                 do {
                     try lock.withLock {
                         if cancelled { throw CancellationError() }
@@ -89,7 +89,7 @@ private final class AgentProcess: @unchecked Sendable {
                     DispatchQueue.global(qos: .utility).async {
                         defer { readers.leave() }
                         while let chunk = try? pipe.fileHandleForReading.read(upToCount: 8192), !chunk.isEmpty {
-                            if isOutput { capture.append(chunk) }
+                            if isOutput { capture.append(chunk) } else { diagnostics?(chunk) }
                             // Drain stderr but never surface diagnostic logs that may contain credentials.
                         }
                     }
@@ -100,12 +100,12 @@ private final class AgentProcess: @unchecked Sendable {
                 let wasCancelled = lock.withLock { let value = cancelled; process = nil; return value }
                 if wasCancelled { continuation.resume(throwing: CancellationError()); return }
                 guard child.terminationStatus == 0 else {
-                    continuation.resume(throwing: RecorderError.message(LF("Agent 退出（%d）。请检查 CLI 版本和登录状态；需要支持设置中列出的参数。", child.terminationStatus))); return
+                    continuation.resume(throwing: RecorderError.message(LF("%@（退出码 %d）", L(invocation.failureMessage), child.terminationStatus))); return
                 }
                 do {
                     let data = try invocation.output.map { try Data(contentsOf: $0) } ?? capture.data
                     guard data.count <= 2_000_000, let text = String(data: data, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        throw RecorderError.message("Agent 没有返回可用回答，或输出超过 2 MB。")
+                        throw RecorderError.message("本地程序没有返回结果，或输出超过 2 MB。")
                     }
                     continuation.resume(returning: text.trimmingCharacters(in: .whitespacesAndNewlines))
                 } catch { continuation.resume(throwing: error) }
@@ -125,8 +125,10 @@ final class LocalAgentService {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("HuiSheng-Agent-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
+        await ExecutableLocator.refresh()
+        try Task.checkCancellation()
         let invocation = try AgentInvocation.make(settings: settings, messages: messages, directory: directory)
-        let process = AgentProcess()
+        let process = LocalCommandProcess()
         let watchdog = Task { do { try await Task.sleep(for: .seconds(180)); process.cancel() } catch {} }
         defer { watchdog.cancel() }
         let started = Date()

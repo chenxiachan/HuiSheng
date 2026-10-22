@@ -10,6 +10,11 @@ swiftc -swift-version 5 -parse-as-library -o "$TEST_DIR/check" \
   "$ROOT/Sources/HuiSheng/Localization.swift" \
   "$ROOT/Sources/HuiSheng/MediaPipeline.swift" \
   "$ROOT/Sources/HuiSheng/LiveTranscription.swift" \
+  "$ROOT/Sources/HuiSheng/ExecutableLocator.swift" \
+  "$ROOT/Sources/HuiSheng/TranscriptionSettings.swift" \
+  "$ROOT/Sources/HuiSheng/WhisperTranscription.swift" \
+  "$ROOT/Sources/HuiSheng/LocalAgentService.swift" \
+  "$ROOT/Sources/HuiSheng/QuestionService.swift" \
   "$ROOT/Sources/HuiSheng/MeetingDocument.swift" \
   "$ROOT/Tests/SpeechCheck.swift"
 "$TEST_DIR/check" "$TEST_DIR/chinese.aiff" zh-CN

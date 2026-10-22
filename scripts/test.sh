@@ -9,11 +9,16 @@ swiftc -swift-version 5 -parse-as-library -O -o "$TEST_DIR/audio-check" \
   "$ROOT/Sources/HuiSheng/CaptureEngine.swift" \
   "$ROOT/Sources/HuiSheng/RecorderModel.swift" \
   "$ROOT/Sources/HuiSheng/LiveTranscription.swift" \
+  "$ROOT/Sources/HuiSheng/ExecutableLocator.swift" \
+  "$ROOT/Sources/HuiSheng/TranscriptionSettings.swift" \
+  "$ROOT/Sources/HuiSheng/WhisperTranscription.swift" \
+  "$ROOT/Sources/HuiSheng/FileTranscription.swift" \
   "$ROOT/Sources/HuiSheng/MeetingDocument.swift" \
   "$ROOT/Sources/HuiSheng/QuestionService.swift" \
   "$ROOT/Sources/HuiSheng/LocalAgentService.swift" \
   "$ROOT/Sources/HuiSheng/MeetingWorkspaceModel.swift" \
   "$ROOT/Sources/HuiSheng/TranscriptTextView.swift" \
+  "$ROOT/Tests/HuiShengTests/LocalSpeechTests.swift" \
   "$ROOT/Tests/HuiShengTests/FeatureTests.swift" \
   "$ROOT/Tests/HuiShengTests/MediaTests.swift"
 rm -f "$TEST_DIR/mock-port"

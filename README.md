@@ -5,7 +5,7 @@
 
 Record meeting audio and your microphone as M4A, transcribe on your Mac, then select text to ask follow-up questions beside the transcript. Answers can come from your own API, an on-device model, or a local agent. Recording and transcription require no API key or virtual audio driver.
 
-**Early preview:** v0.3 has a simplified native macOS interface, larger type, and instant Chinese / English switching. Recording, on-device transcription, and anchored Q&A are included; screen recording and speaker identification are not.
+**Early preview:** v0.4 adds local Whisper with automatic language detection, optional live transcription, transcription of saved recordings, and automatic discovery of installed agents. The native interface keeps larger type and instant Chinese / English switching. Screen recording and speaker identification are not included.
 
 ![English interface with synthetic meeting text and mock answers](docs/assets/interface-en.jpg)
 
@@ -20,7 +20,9 @@ Record meeting audio and your microphone as M4A, transcribe on your Mac, then se
 - Browse, search, play, and reveal recordings in Finder.
 - Control an active recording from the menu bar while the main window is closed.
 - Choose a local storage folder; no audio is uploaded by the app.
-- On-device Chinese, English, and German transcription with timestamps and separate system/microphone labels.
+- Optional on-device live transcription, or transcribe saved recordings later.
+- Whisper automatic language detection with an installed multilingual model; Apple recognition with a selected language. Timestamps and separate system/microphone labels are retained when original tracks are available.
+- Automatically discover installed Codex and Claude Code executables, including Node version-manager installations.
 - Native text selection across paragraphs, anchored discussions, follow-up questions, and links back to source text.
 - OpenAI-compatible streaming APIs, Ollama / LM Studio endpoints, Codex CLI, and Claude Code.
 - Local transcript/discussion persistence, reopening, and Markdown export.
@@ -30,7 +32,8 @@ Record meeting audio and your microphone as M4A, transcribe on your Mac, then se
 | Item | Requirement |
 | --- | --- |
 | Operating system | macOS 15 or later |
-| Live transcription | macOS 26+, an Apple Silicon Mac supporting SpeechTranscriber; Apple speech assets may need downloading on first use |
+| Whisper transcription | macOS 15+, a compatible installed `whisper-cli` and multilingual whisper.cpp `ggml-*.bin` model; models are not bundled or downloaded by HuiSheng |
+| Apple transcription | macOS 26+, an Apple Silicon Mac supporting SpeechTranscriber; Apple speech assets may need downloading on first use |
 | Downloadable build | Apple Silicon / arm64 |
 | Permissions | Screen & System Audio Recording; Microphone if enabled |
 | Building from source | Apple Command Line Tools or Xcode with the macOS 26 SDK (Swift 6.2+) |
@@ -39,7 +42,7 @@ The initial build was tested on macOS 26.5.2 with Swift 6.3.3. Earlier supported
 
 ## Install
 
-Download `HuiSheng-v0.3.0-macOS-arm64.zip` from the [v0.3.0 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.3.0), unzip it, and move `会声-v0.3.app` to Applications.
+Download `HuiSheng-v0.4.0-macOS-arm64.zip` from the [v0.4.0 preview release](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.4.0), unzip it, and move `会声-v0.4.app` to Applications.
 
 This preview is ad-hoc signed and **not notarized by Apple**. macOS may block a downloaded build; building from source is the alternative for this release.
 
@@ -57,7 +60,7 @@ The interface uses system colors and appearance, 16 pt main interface text, and 
 4. Click **Start recording**. Allow the requested permissions in **System Settings → Privacy & Security**. If capture still fails after permission is granted, quit and reopen HuiSheng.
 5. Check the meeting and microphone level indicators. Pause or resume as needed, then click **Stop & Save**.
 
-When enabling live transcription, choose a language before starting. Recording begins after speech preparation; preparation can be cancelled. A transcription failure is displayed and recording continues independently.
+Turn **Live transcription** on or off before recording. If off, audio is saved normally and can be transcribed later. Choose **Whisper → Detect automatically** to recognize the language locally, or choose Apple and a specific language. Recording begins after preparation; preparation can be cancelled. A transcription failure is displayed and recording continues independently.
 
 Recordings are saved to `~/Movies/会声` by default. Change the destination in Settings. Each meeting has its own folder with a final `.m4a` file, original tracks, `session.json` metadata, and a `meeting.json` transcript/discussion document. The library shows recordings in the selected storage folder.
 
@@ -69,13 +72,27 @@ Recordings are saved to `~/Movies/会声` by default. Change the destination in 
 
 ## Live transcription and anchored questions
 
-1. Start recording and open **Transcript & Q&A**. Text updates in place; provisional text is labeled “Draft” and can also be selected. The recognizer finalizes naturally without forced phrase boundaries.
+1. Start recording and open **Transcript & Q&A**. Whisper updates in speech chunks (typically 8–20 seconds plus inference time); Apple provides provisional text labeled “Draft,” which can also be selected and finalizes naturally. Whisper flushes a short final chunk when recording stops.
 2. Drag to select a sentence or text across paragraphs. The default is **selected text only**; explicitly choose nearby paragraphs (two on each side) or all currently available text if needed.
 3. Click **Ask about selection** and ask in the right pane. Configure the answer backend using the settings button first.
 4. Continue the discussion around the same quotation. Its evidence is a fixed snapshot; new transcript content never expands that discussion automatically. Discussions containing provisional text are labeled; later corrections do not rewrite their original quotations. Expand the evidence disclosure to inspect the actual material.
 5. Click a citation or evidence item to return to its paragraph. Stopping preserves received text, but incomplete answers are excluded from subsequent request history. Export the transcript and discussions as Markdown from the toolbar.
 
-The displayed transcript stays fixed during selection while capture and recognition continue; clearing the selection or creating a discussion resumes display updates. System/microphone labels identify input tracks, not participants. Transcripts can contain recognition errors; timestamps refer to paragraph ranges. Review important details against the recording. Retrospective transcription of existing recordings is not yet supported.
+The displayed transcript stays fixed during selection while capture and recognition continue; clearing the selection or creating a discussion resumes display updates. System/microphone labels identify input tracks, not participants. Transcripts can contain recognition errors; timestamps refer to paragraph ranges. Review important details against the recording.
+
+### Local speech models and automatic language detection
+
+![Recording options with automatic speech-language detection](docs/assets/recording-options-en.jpg)
+
+HuiSheng detects an installed `whisper-cli` through the terminal PATH, common install directories, and Node version-manager directories. It looks for multilingual `ggml-*.bin` files in known model folders, including `~/Documents/whisper.cpp/models`, `~/whisper.cpp/models`, and `~/Library/Application Support/HuiSheng/models`. No model is downloaded automatically. Expand **Local model** to select another model or executable. On a fresh setup, Whisper with automatic detection is the default when both are found; otherwise Apple is selected.
+
+Whisper uses `-l auto` without translating the text. The engine detects the predominant language for each live chunk, or for a saved audio track. This is not word-by-word language switching: mixed languages, silence, noise, or very short phrases may reduce accuracy. Choose Chinese, English, or German explicitly when needed. English-only `.en.bin` models cannot be used for automatic detection. Apple requires a selected language and does not offer automatic detection here.
+
+### Transcribe a saved recording
+
+In **Recordings**, click **Transcribe**, choose the engine and language, then **Start transcription**. A progress indicator and cancellation control are shown. The app prefers complete original tracks; if they are unavailable, it uses the mixed recording and cannot separate the speakers or input sources. WAV conversion, recognition, and temporary-file cleanup happen locally; allow additional temporary disk space (roughly 115 MB per hour per converted mono track).
+
+Completed text opens in **Transcript & Q&A**. Cancelling or failing leaves audio and existing text unchanged. Existing text without discussions can be transcribed again; its previous `meeting.json` is backed up in the recording folder. Transcripts with linked discussions cannot currently be replaced, to preserve their citation targets. Arbitrary external audio import is not included in this version.
 
 ### APIs, on-device models, and local agents
 
@@ -83,7 +100,9 @@ The displayed transcript stays fixed during selection while capture and recognit
 | --- | --- | --- |
 | OpenAI-compatible API | Base URL including `/v1` or the provider path, model name, and key; uses `chat/completions` | Streaming |
 | Ollama / LM Studio | Start the local server, download a model, select the URL preset, and enter the installed model name | Streaming; can operate fully offline |
-| Codex CLI / Claude Code | Install and sign in through the terminal, then select the executable; model name is optional | Shown on completion; cancellable, 180-second timeout |
+| Codex CLI / Claude Code | Install and sign in through the terminal; HuiSheng discovers the executable automatically. Manual selection and model name are optional | Shown on completion; cancellable, 180-second timeout |
+
+Use **Scan again** after installing a CLI. Discovery follows the approach used in ThoughtDAG and TextFold: terminal PATH, standard locations, NVM/FNM, and other version managers. Child processes receive the expanded PATH so Node-based commands also work when HuiSheng is opened from Finder. Custom executable paths remain available under **Agent path**.
 
 API keys are stored in macOS Keychain per endpoint, never in meeting files. HTTP is permitted only for loopback hosts; other endpoints require HTTPS. Redirects are refused. Evidence above 40,000 characters or a discussion above 80,000 characters requires a smaller scope.
 
@@ -139,11 +158,21 @@ The standalone runner works with Command Line Tools; a full Xcode installation i
 
 Additional checks cover persisted interface-language switching, legacy scope labels, unchanged quotation snapshots and UTF-16 selection across languages, native UTF-16 selection, selection-only isolation, evidence snapshots, restart recovery, real loopback HTTP/SSE with split UTF-8, interrupted responses, HTTP 401, redirects, model errors, cancellation, and simulated CLI input/output and termination. Mock backends do not invoke real models.
 
-Run the opt-in on-device speech integration check on macOS 26+ (Apple models may download on first use; requires the system Tingting and Samantha voices):
+Run the optional Whisper / Apple file-transcription and Whisper live integration check with installed models (synthetic Chinese/English voices only; `WHISPER_CLI` and `WHISPER_MODEL` can override discovery):
+
+```bash
+bash scripts/local-speech-check.sh
+```
+
+Run the opt-in Apple live speech integration check on macOS 26+ (Apple models may download on first use; requires the system Tingting and Samantha voices):
 
 ```bash
 bash scripts/speech-check.sh
 ```
+
+v0.4 was verified with actual local Whisper automatic Chinese/English recognition, two simultaneous live input formats, updates before stopping, file transcription, cancellation, and Apple file transcription. The native app was checked in both interface languages, including discovered agents and selecting text from a newly generated transcript. These checks used synthetic audio and did not invoke an agent model.
+
+v0.4 adds regression checks for sparse-PATH agent discovery, version-manager ordering, child-process runtime discovery, Whisper timestamps, English-only model rejection, recording source fallback, backup creation, and protection against overwriting changed or cited transcripts.
 
 v0.3 was checked in native windows in both interface languages, including immediate menu refresh, preserved text selection and question history, settings sheets, and language persistence after restart.
 
@@ -155,7 +184,7 @@ Test artifacts are written to `.test-output/`, or the directory set by `HUISHENG
 
 `ScreenCaptureKit → separate AAC tracks → shared timeline → local M4A mix`
 
-After recording writes, a separate queue feeds PCM conversion into Apple SpeechAnalyzer / SpeechTranscriber. Timestamped text becomes fixed selection evidence for API/CLI requests. Backpressure or recognition errors stop transcription with a visible warning while keeping recording independent. Transcript and discussion updates are written atomically to `meeting.json`.
+After recording writes, a separate queue feeds PCM conversion into Apple SpeechAnalyzer / SpeechTranscriber or bounded WAV chunks for the installed whisper.cpp CLI. Saved recordings use AVAssetReader conversion and the same local engines. Timestamped text becomes fixed selection evidence for API/CLI requests. Backpressure or recognition errors stop transcription with a visible warning while keeping recording independent. Transcript and discussion updates are written atomically to `meeting.json`.
 
 SwiftUI and AppKit provide the interface and menu-bar controls. A serial media queue handles capture, pause, and stop operations. AVAssetWriter encodes separate system and microphone tracks; AVMutableComposition and AVAudioMix export the final recording. With two audio tracks, each uses a gain of 0.5 to leave mixing headroom.
 

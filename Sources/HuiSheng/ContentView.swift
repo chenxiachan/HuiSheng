@@ -37,6 +37,8 @@ struct ContentView: View {
         .font(.system(size: 16))
         .environment(\.locale, language.language.locale)
         .onChange(of: model.phase) { _, phase in if phase == .recording && model.useTranscription { tab = 3 } }
+        .onChange(of: model.transcriptOpened) { _, _ in tab = 3 }
+        .sheet(item: $model.pendingTranscription) { record in FileTranscriptionView(model: model, recording: record) }
         .alert(L("会声"), isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button(L("好")) { model.message = nil }
         } message: { Text(L(model.message ?? "")) }
@@ -121,7 +123,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         if model.busy { ProgressView().controlSize(.small) }
                         else { Image(systemName: "record.circle") }
-                        Text(L(model.phase == .saving ? "正在保存…" : model.phase == .starting ? "正在准备…" : "开始录音"))
+                        Text(L(model.phase == .transcribing ? "正在转录…" : model.phase == .saving ? "正在保存…" : model.phase == .starting ? "正在准备…" : "开始录音"))
                     }.frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent).disabled(model.busy)
             }
@@ -134,6 +136,7 @@ struct ContentView: View {
         case .recording: return L("录音中")
         case .paused: return L("已暂停")
         case .saving: return L("正在保存")
+        case .transcribing: return L("正在转录…")
         }
     }
 
@@ -179,6 +182,8 @@ struct ContentView: View {
             if record.status == "interrupted" {
                 Button(L("恢复导出")) { Task { await model.recover(record) } }.disabled(model.busy)
             } else { Text(durationText(record.duration)).monospacedDigit().font(.system(size: 14)).foregroundStyle(.secondary) }
+            Button(L("转为文字")) { model.prepareFileTranscription(record) }
+                .disabled(model.busy || record.filename == nil)
             Button { model.openTranscript(record); tab = 3 } label: { Image(systemName: "text.bubble").frame(width: 22, height: 22) }
                 .disabled(model.busy).help(L("查看转录"))
             Button { model.reveal(record) } label: { Image(systemName: "folder").frame(width: 22, height: 22) }

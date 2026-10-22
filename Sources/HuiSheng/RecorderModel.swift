@@ -27,7 +27,7 @@ struct AudioSource: Identifiable, Hashable {
     var name: String
 }
 
-enum RecorderPhase { case idle, starting, recording, paused, saving }
+enum RecorderPhase { case idle, starting, recording, paused, saving, transcribing }
 
 @MainActor
 final class RecorderModel: ObservableObject {
@@ -35,8 +35,16 @@ final class RecorderModel: ObservableObject {
     @Published var title = ""
     @Published var sourceID = "all"
     @Published var useMicrophone = true
-    @Published var useTranscription = LiveTranscription.supported
-    @Published var transcriptionLocale = "zh-CN"
+    @Published var useTranscription = UserDefaults.standard.object(forKey: "liveTranscription") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(useTranscription, forKey: "liveTranscription") }
+    }
+    @Published var transcriptionSettings = TranscriptionSettings.load() { didSet { transcriptionSettings.save() } }
+    @Published var pendingTranscription: Recording?
+    @Published var fileProgress = 0.0
+    @Published var fileError: String?
+    @Published var fileCancelling = false
+    @Published var transcriptOpened = UUID()
+    private var fileTask: Task<Void, Never>?
     let workspace = MeetingWorkspaceModel()
     private var transcription: LiveTranscription?
     private var preparationTask: Task<Void, Error>?
@@ -144,8 +152,8 @@ final class RecorderModel: ObservableObject {
                 let speech = LiveTranscription()
                 speech.onStatus = { [weak self] status in Task { @MainActor in self?.workspace.speechStatus = status } }
                 speech.onFailure = { [weak self] text in Task { @MainActor in self?.workspace.speechError = text } }
-                let locale = transcriptionLocale, microphone = useMicrophone
-                let preparing = Task { try await speech.prepare(locale: locale, microphone: microphone) }
+                let settings = transcriptionSettings, microphone = useMicrophone
+                let preparing = Task { try await speech.prepare(settings: settings, microphone: microphone) }
                 preparationTask = preparing
                 do { try await preparing.value; transcription = speech }
                 catch {
@@ -285,6 +293,41 @@ final class RecorderModel: ObservableObject {
     func openTranscript(_ record: Recording) {
         guard !busy else { return }
         workspace.open(recording: record, directory: folder.appendingPathComponent(record.folderName))
+    }
+    func prepareFileTranscription(_ record: Recording) {
+        guard !busy else { return }
+        fileProgress = 0; fileError = nil; fileCancelling = false; pendingTranscription = record
+    }
+    func transcribeFile(_ record: Recording) {
+        guard !busy else { return }
+        workspace.stopAnswer(); workspace.flush(); stopPlayback()
+        phase = .transcribing; fileError = nil; fileProgress = 0; fileCancelling = false
+        let directory = folder.appendingPathComponent(record.folderName), settings = transcriptionSettings
+        fileTask = Task { [weak self] in
+            guard let self else { return }
+            defer { phase = .idle; fileTask = nil; fileCancelling = false }
+            do {
+                let existing = try MeetingStore.load(in: directory, recordingID: record.id)
+                guard existing.threads.isEmpty else { throw RecorderError.message("这份转录已有追问，请打开现有转录。为保留引用关系，暂不替换其原文。") }
+                let expected = try FileTranscription.documentData(in: directory)
+                let document = try await FileTranscription.transcribe(recording: record, directory: directory, settings: settings) { [weak self] progress in
+                    Task { @MainActor in if self?.phase == .transcribing { self?.fileProgress = max(self?.fileProgress ?? 0, progress) } }
+                }
+                try Task.checkCancellation()
+                try FileTranscription.commit(document, in: directory, expected: expected)
+                // The completed transcript is already committed; never flush the previous
+                // in-memory version over it when this was the currently open recording.
+                workspace.open(recording: record, directory: directory, flushCurrent: false)
+                workspace.speechStatus = "转录已保存到本地"
+                pendingTranscription = nil; transcriptOpened = UUID()
+            } catch {
+                fileError = Task.isCancelled ? "已取消转录，原录音和已有文字未改变。" : error.localizedDescription
+            }
+        }
+    }
+    func cancelFileTranscription() {
+        guard phase == .transcribing else { return }
+        fileCancelling = true; fileTask?.cancel()
     }
     func play(_ record: Recording) {
         guard !busy, let url = fileURL(record) else { return }
