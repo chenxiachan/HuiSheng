@@ -1,0 +1,14 @@
+.build/
+.test-output/
+.DS_Store
+.swiftpm/
+dist/
+*.app/
+*.zip
+*.m4a
+*.mov
+*.wav
+xcuserdata/
+
+# Local handoff notes; public verification details are documented in the READMEs.
+验证记录.md
