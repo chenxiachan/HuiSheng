@@ -17,6 +17,8 @@ swiftc -swift-version 5 -parse-as-library -O -o "$TEST_DIR/local-speech-check" \
   "$ROOT/Sources/HuiSheng/WhisperTranscription.swift" \
   "$ROOT/Sources/HuiSheng/FileTranscription.swift" \
   "$ROOT/Sources/HuiSheng/MeetingDocument.swift" \
+  "$ROOT/Sources/HuiSheng/MeetingSummary.swift" \
+  "$ROOT/Sources/HuiSheng/LocalSummaryService.swift" \
   "$ROOT/Sources/HuiSheng/QuestionService.swift" \
   "$ROOT/Sources/HuiSheng/LocalAgentService.swift" \
   "$ROOT/Sources/HuiSheng/MeetingWorkspaceModel.swift" \

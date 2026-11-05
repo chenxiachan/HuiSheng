@@ -175,15 +175,21 @@ struct ContentView: View {
             }.buttonStyle(.borderless).disabled(record.filename == nil || model.busy).help(L("播放 / 停止"))
             VStack(alignment: .leading, spacing: 6) {
                 Text(record.title).font(.system(size: 17, weight: .medium)).lineLimit(1)
+                if let job = model.summaryJobs[record.id] {
+                    if job.running { Text(L(job.status)).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1) }
+                    else if job.error != nil { Text(L("总结未完成，可重试")).font(.system(size: 13)).foregroundStyle(.orange) }
+                }
                 Text("\(record.date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().locale(language.language.locale))) · \(L(record.source))")
                     .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 10)
             if record.status == "interrupted" {
-                Button(L("恢复导出")) { Task { await model.recover(record) } }.disabled(model.busy)
+                Button(L("恢复导出")) { Task { await model.recover(record) } }.disabled(model.busy || model.summaryJobs[record.id]?.running == true)
             } else { Text(durationText(record.duration)).monospacedDigit().font(.system(size: 14)).foregroundStyle(.secondary) }
             Button(L("转为文字")) { model.prepareFileTranscription(record) }
-                .disabled(model.busy || record.filename == nil)
+                .disabled(model.busy || record.filename == nil || model.summaryJobs[record.id]?.running == true)
+            Button(L("总结")) { model.openSummary(record); tab = 3 }
+                .disabled(model.busy || record.status != "ready")
             Button { model.openTranscript(record); tab = 3 } label: { Image(systemName: "text.bubble").frame(width: 22, height: 22) }
                 .disabled(model.busy).help(L("查看转录"))
             Button { model.reveal(record) } label: { Image(systemName: "folder").frame(width: 22, height: 22) }
@@ -212,6 +218,15 @@ struct ContentView: View {
                     Button(L("选择文件夹…")) { model.chooseFolder() }.disabled(model.busy)
                     Button(L("在访达中打开")) { model.openFolder() }
                 }
+            }
+            settingsSection("会议总结") {
+                Toggle(L("结束后自动命名与总结"), isOn: $model.autoSummary).toggleStyle(.switch)
+                Text(L("使用 Apple 本地大语言模型，会议内容不发送到问答 API 或 Agent。"))
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                Text(L(AppleSummaryModel.unavailableReason ?? "Apple 本地大语言模型已就绪。"))
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                Text(L("未命名的录音会自动命名；手动填写的名称会保留。"))
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
             }
             settingsSection("系统权限") {
                 permissionRow("屏幕与系统音频录制", granted: model.screenAllowed, mic: false)

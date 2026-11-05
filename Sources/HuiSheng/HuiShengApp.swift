@@ -84,14 +84,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
-        guard model.busy else { model.workspace.stopAnswer(); model.workspace.flush(); return .terminateNow }
+        guard model.busy else {
+            if model.hasSummaryWork {
+                let alert = NSAlert(); alert.messageText = L("会议总结尚未完成")
+                alert.informativeText = L("录音已保存。退出会停止总结，之后可从录音列表重新生成。")
+                alert.addButton(withTitle: L("停止并退出")); alert.addButton(withTitle: L("继续处理"))
+                guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+                model.cancelAllSummaries()
+            }
+            model.workspace.stopAnswer(); model.workspace.flush(); return .terminateNow
+        }
         let alert = NSAlert()
         alert.messageText = model.isRecording ? L("录音尚未保存") : L("正在处理录音")
         alert.informativeText = model.isRecording ? L("结束并保存当前录音后退出？") : L("请等当前操作完成后再退出。")
         if model.isRecording {
             alert.addButton(withTitle: L("结束并保存")); alert.addButton(withTitle: L("继续录音"))
             if alert.runModal() == .alertFirstButtonReturn {
-                Task { await model.stop(); model.workspace.stopAnswer(); model.workspace.flush(); sender.reply(toApplicationShouldTerminate: true) }
+                Task { await model.stop(); model.cancelAllSummaries(); model.workspace.stopAnswer(); model.workspace.flush(); sender.reply(toApplicationShouldTerminate: true) }
                 return .terminateLater
             }
         } else { alert.addButton(withTitle: L("继续等待")); alert.runModal() }

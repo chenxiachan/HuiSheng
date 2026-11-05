@@ -14,6 +14,11 @@ struct Recording: Codable, Identifiable {
     var filename: String?
     var note: String?
     var folderName: String
+    var titleOrigin: String?
+    var canAutoTitle: Bool {
+        if let titleOrigin { return titleOrigin == "placeholder" || titleOrigin == "automatic" }
+        return ["未命名会议", "Untitled meeting"].contains(title)
+    }
 
     static func safeName(_ value: String) -> String {
         let invalid = CharacterSet(charactersIn: "/\\:\n\r\t").union(.controlCharacters)
@@ -45,6 +50,24 @@ final class RecorderModel: ObservableObject {
     @Published var fileCancelling = false
     @Published var transcriptOpened = UUID()
     private var fileTask: Task<Void, Never>?
+    @Published var autoSummary = UserDefaults.standard.object(forKey: "autoMeetingSummary") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoSummary, forKey: "autoMeetingSummary") }
+    }
+    @Published var summaryJobs: [UUID: SummaryJobState] = [:]
+    private struct SummaryRequest {
+        let token = UUID()
+        var recording: Recording
+        var directory: URL
+        var language: String
+        var transcription: TranscriptionSettings
+        var incomplete: Bool
+    }
+    private var summaryQueue: [SummaryRequest] = []
+    private var summaryTask: Task<Void, Never>?
+    private var activeSummaryID: UUID?
+    private var activeSummaryToken: UUID?
+    private let summaryService: LocalSummaryService
+    var hasSummaryWork: Bool { summaryJobs.values.contains(where: \.running) }
     let workspace = MeetingWorkspaceModel()
     private var transcription: LiveTranscription?
     private var preparationTask: Task<Void, Error>?
@@ -79,9 +102,10 @@ final class RecorderModel: ObservableObject {
     }
     var totalDuration: Double { recordings.reduce(0) { $0 + $1.duration } }
 
-    init() {
+    init(summaryService: LocalSummaryService = .init(), recordingFolder: URL? = nil) {
+        self.summaryService = summaryService
         let saved = UserDefaults.standard.string(forKey: "recordingFolder")
-        folder = saved.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        folder = recordingFolder ?? saved.map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("会声", isDirectory: true)
         refreshPermissions(); refreshSources(); reload()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -166,7 +190,8 @@ final class RecorderModel: ObservableObject {
             let name = Recording.safeName(title)
             let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd_HH-mm-ss"
             let folderName = "\(stamp.string(from: Date()))_\(name)_\(UUID().uuidString.prefix(6))"
-            let record = Recording(title: name, source: sourceName, microphone: useMicrophone, folderName: folderName)
+            let record = Recording(title: name, source: sourceName, microphone: useMicrophone, folderName: folderName,
+                                   titleOrigin: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "placeholder" : "manual")
             current = record
             try persist(record)
             let previousSpeechError = workspace.speechError
@@ -266,6 +291,7 @@ final class RecorderModel: ObservableObject {
             try persist(record)
             title = ""
             message = reason.map { LF("%@\n已成功保存中断前的录音。", $0) }
+            if autoSummary { enqueueSummary(record, directory: directory, incomplete: reason != nil || workspace.speechError != nil) }
         } catch {
             await transcription?.cancel(); transcription = nil
             workspace.isFinalizing = false; workspace.flush()
@@ -276,7 +302,7 @@ final class RecorderModel: ObservableObject {
     }
 
     func recover(_ record: Recording) async {
-        guard !busy else { return }
+        guard !busy, summaryJobs[record.id]?.running != true else { return }
         phase = .saving; stopPlayback()
         defer { phase = .idle; reload() }
         do {
@@ -287,6 +313,7 @@ final class RecorderModel: ObservableObject {
             updated.duration = try await MediaExporter.export(tracks: tracks, to: destination, video: false)
             updated.filename = destination.lastPathComponent; updated.status = "ready"; updated.note = "已从原始音轨恢复。"
             try persist(updated)
+            if autoSummary { enqueueSummary(updated, directory: directory, incomplete: true) }
         } catch { message = LF("恢复失败：%@\n原始文件仍保留在录音文件夹中。", error.localizedDescription) }
     }
 
@@ -299,7 +326,7 @@ final class RecorderModel: ObservableObject {
         fileProgress = 0; fileError = nil; fileCancelling = false; pendingTranscription = record
     }
     func transcribeFile(_ record: Recording) {
-        guard !busy else { return }
+        guard !busy, summaryJobs[record.id]?.running != true else { return }
         workspace.stopAnswer(); workspace.flush(); stopPlayback()
         phase = .transcribing; fileError = nil; fileProgress = 0; fileCancelling = false
         let directory = folder.appendingPathComponent(record.folderName), settings = transcriptionSettings
@@ -320,6 +347,7 @@ final class RecorderModel: ObservableObject {
                 workspace.open(recording: record, directory: directory, flushCurrent: false)
                 workspace.speechStatus = "转录已保存到本地"
                 pendingTranscription = nil; transcriptOpened = UUID()
+                if autoSummary { enqueueSummary(record, directory: directory, incomplete: record.note != nil) }
             } catch {
                 fileError = Task.isCancelled ? "已取消转录，原录音和已有文字未改变。" : error.localizedDescription
             }
@@ -328,6 +356,96 @@ final class RecorderModel: ObservableObject {
     func cancelFileTranscription() {
         guard phase == .transcribing else { return }
         fileCancelling = true; fileTask?.cancel()
+    }
+
+    func openSummary(_ record: Recording) {
+        guard !busy else { return }
+        openTranscript(record); workspace.panel = .summary
+        if workspace.summary == nil && summaryJobs[record.id]?.running != true {
+            enqueueSummary(record, directory: folder.appendingPathComponent(record.folderName), incomplete: record.note != nil)
+        }
+    }
+    func summarizeCurrentMeeting() {
+        guard !busy, let id = workspace.document?.recordingID, let directory = workspace.directory else { return }
+        workspace.flush(); workspace.panel = .summary
+        do {
+            let record = try JSONDecoder().decode(Recording.self, from: Data(contentsOf: directory.appendingPathComponent("session.json")))
+            guard record.id == id, record.status == "ready" else { throw RecorderError.message("请先结束并保存录音，再生成会议总结。") }
+            enqueueSummary(record, directory: directory, incomplete: record.note != nil || workspace.speechError != nil || workspace.summary?.transcriptIncomplete == true)
+        } catch { workspace.error = error.localizedDescription }
+    }
+    func enqueueSummary(_ record: Recording, directory: URL, incomplete: Bool) {
+        guard record.status == "ready", summaryJobs[record.id]?.running != true else { return }
+        if workspace.document?.recordingID == record.id { workspace.flush(); workspace.panel = .summary }
+        summaryJobs[record.id] = SummaryJobState(status: "等待本机处理…")
+        summaryQueue.append(SummaryRequest(recording: record, directory: directory, language: AppLanguage.current.rawValue,
+                                           transcription: transcriptionSettings, incomplete: incomplete))
+        startNextSummary()
+    }
+    private func startNextSummary() {
+        guard summaryTask == nil, !summaryQueue.isEmpty else { return }
+        let request = summaryQueue.removeFirst(), id = request.recording.id
+        activeSummaryID = id
+        activeSummaryToken = request.token
+        summaryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { summaryTask = nil; activeSummaryID = nil; activeSummaryToken = nil; startNextSummary() }
+            do {
+                // Availability is checked before any expensive post-recording transcription.
+                // Injected test generators can still test the queue on unsupported hosts.
+                summaryJobs[id] = SummaryJobState(status: "正在准备会议总结…")
+                let loaded = Task.detached(priority: .utility) { try MeetingStore.load(in: request.directory, recordingID: id) }
+                var document = try await loaded.value
+                try Task.checkCancellation()
+                if document.segments.isEmpty {
+                    guard document.threads.isEmpty else { throw RecorderError.message("没有可用于总结的转录，请先转录录音。") }
+                    if let reason = summaryService.unavailableReason() { throw RecorderError.message(reason) }
+                    let expected = try FileTranscription.documentData(in: request.directory)
+                    summaryJobs[id] = SummaryJobState(status: "录音已保存，正在补转录…")
+                    document = try await FileTranscription.transcribe(recording: request.recording, directory: request.directory, settings: request.transcription) { [weak self] value in
+                        Task { @MainActor in
+                            guard self?.activeSummaryToken == request.token, self?.summaryJobs[id]?.running == true else { return }
+                            self?.summaryJobs[id] = SummaryJobState(status: "录音已保存，正在补转录…", progress: value * 0.1)
+                        }
+                    }
+                    try Task.checkCancellation()
+                    try FileTranscription.commit(document, in: request.directory, expected: expected)
+                    if workspace.document?.recordingID == id {
+                        workspace.open(recording: request.recording, directory: request.directory, flushCurrent: false)
+                        workspace.panel = .summary
+                    }
+                }
+                let summary = try await summaryService.summarize(document, language: request.language, incomplete: request.incomplete) { [weak self] status, progress in
+                    Task { @MainActor in
+                        guard self?.activeSummaryToken == request.token, self?.summaryJobs[id]?.running == true else { return }
+                        self?.summaryJobs[id] = SummaryJobState(status: status, progress: progress)
+                    }
+                }
+                try Task.checkCancellation()
+                if workspace.document?.recordingID == id { workspace.flush() }
+                try MeetingSummaryStore.save(summary, in: request.directory)
+                let updated = try MeetingSummaryStore.updateTitle(for: request.recording, summary: summary, in: request.directory)
+                summaryJobs[id] = SummaryJobState(status: "会议总结已保存", progress: 1, running: false)
+                if workspace.document?.recordingID == id {
+                    workspace.summary = summary; workspace.meetingTitle = updated.title
+                }
+                reload()
+            } catch {
+                summaryJobs[id] = SummaryJobState(status: Task.isCancelled ? "已停止总结" : "总结未完成",
+                    error: Task.isCancelled ? "已停止生成，录音、转录和已有总结已保留。" : error.localizedDescription, running: false)
+            }
+        }
+    }
+    func cancelSummary(_ id: UUID) {
+        summaryQueue.removeAll { $0.recording.id == id }
+        if activeSummaryID == id {
+            summaryJobs[id]?.status = "正在停止总结…"; summaryTask?.cancel()
+        } else {
+            summaryJobs[id] = SummaryJobState(status: "已停止总结", error: "已停止生成，录音、转录和已有总结已保留。", running: false)
+        }
+    }
+    func cancelAllSummaries() {
+        for id in Array(summaryJobs.keys) where summaryJobs[id]?.running == true { cancelSummary(id) }
     }
     func play(_ record: Recording) {
         guard !busy, let url = fileURL(record) else { return }

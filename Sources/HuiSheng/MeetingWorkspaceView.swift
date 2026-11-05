@@ -32,7 +32,14 @@ struct MeetingWorkspaceView: View {
             Divider()
             HSplitView {
                 transcript.frame(minWidth: 340, maxWidth: .infinity)
-                questions.frame(minWidth: 350, idealWidth: 420, maxWidth: 600)
+                VStack(spacing: 0) {
+                    Picker(L("会议阅读"), selection: $workspace.panel) {
+                        Text(L("总结")).tag(MeetingPanel.summary)
+                        Text(L("追问")).tag(MeetingPanel.questions)
+                    }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 22).padding(.top, 18)
+                    if workspace.panel == .summary { MeetingSummaryView(workspace: workspace, recorder: recorder) }
+                    else { questions }
+                }.frame(minWidth: 350, idealWidth: 440, maxWidth: 600)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $workspace.showSettings) { QuestionSettingsView(workspace: workspace) }
@@ -204,8 +211,13 @@ struct TranscriptionOptionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Toggle(L("实时转录"), isOn: $model.useTranscription).toggleStyle(.switch).disabled(model.busy)
-            if model.useTranscription {
-                SpeechSettingsView(settings: $model.transcriptionSettings).disabled(model.busy)
+            Toggle(L("结束后自动命名与总结"), isOn: $model.autoSummary).toggleStyle(.switch).disabled(model.busy)
+            if model.useTranscription || model.autoSummary {
+                SpeechSettingsView(settings: $model.transcriptionSettings, live: model.useTranscription).disabled(model.busy)
+                if !model.useTranscription {
+                    Text(L("录音保存后，使用所选引擎转录，再由本地模型起名和总结。"))
+                        .font(.system(size: 14)).foregroundStyle(.secondary)
+                }
             } else {
                 Text(L("只录音，结束后可在录音列表中转录。")).font(.system(size: 14)).foregroundStyle(.secondary)
             }

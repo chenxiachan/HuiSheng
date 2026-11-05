@@ -1,9 +1,13 @@
 import SwiftUI
 import AppKit
 
+enum MeetingPanel: String { case summary, questions }
+
 @MainActor
 final class MeetingWorkspaceModel: ObservableObject {
     @Published var document: MeetingDocument?
+    @Published var summary: MeetingSummary?
+    @Published var panel: MeetingPanel = .summary
     @Published var meetingTitle = "实时转录与追问"
     @Published var selection: TranscriptSelection?
     @Published var scope: ContextScope = .selection
@@ -32,12 +36,13 @@ final class MeetingWorkspaceModel: ObservableObject {
 
     func clear() {
         stopAnswer(); saveTask?.cancel(); saveTask = nil
-        document = nil; directory = nil; selection = nil; activeThreadID = nil
+        document = nil; summary = nil; directory = nil; selection = nil; activeThreadID = nil
     }
     func begin(recording: Recording, directory: URL) {
         stopAnswer(); flush()
         self.directory = directory; meetingTitle = recording.title
         document = MeetingDocument(recordingID: recording.id)
+        summary = nil; panel = .summary
         selection = nil; activeThreadID = nil; question = ""; speechError = nil; error = nil
         clearSelectionToken = UUID(); scheduleSave()
     }
@@ -47,6 +52,10 @@ final class MeetingWorkspaceModel: ObservableObject {
             else { saveTask?.cancel(); saveTask = nil }
             let loaded = try MeetingStore.load(in: directory, recordingID: recording.id)
             self.directory = directory; meetingTitle = recording.title; document = loaded
+            summary = nil
+            do { summary = try MeetingSummaryStore.load(in: directory, recordingID: recording.id) }
+            catch { self.error = error.localizedDescription }
+            panel = summary == nil ? .questions : .summary
             selection = nil; question = ""; activeThreadID = loaded.threads.last?.id; speechError = nil
             speechStatus = loaded.segments.isEmpty ? "这份录音尚无转录，可在「我的录音」中选择「转为文字」。" : "已打开本地会议记录"
             clearSelectionToken = UUID()
@@ -65,6 +74,7 @@ final class MeetingWorkspaceModel: ObservableObject {
         do {
             let thread = try document.makeThread(selection: selection, scope: scope)
             self.document?.threads.append(thread); activeThreadID = thread.id
+            panel = .questions
             question = ""; self.selection = nil; clearSelectionToken = UUID(); scheduleSave()
         } catch { self.error = error.localizedDescription }
     }
@@ -131,7 +141,10 @@ final class MeetingWorkspaceModel: ObservableObject {
         panel.nameFieldStringValue = Recording.safeName(meetingTitle) + (AppLanguage.current == .english ? "-transcript.md" : "-转录与追问.md")
         panel.title = L("导出转录与追问")
         if panel.runModal() == .OK, let url = panel.url {
-            do { try document.markdown.write(to: url, atomically: true, encoding: .utf8) }
+            do {
+                let summaryText = summary.map { $0.markdown + ($0.isCurrent(for: document) ? "" : "\n> " + L("转录已更新，此总结可能已过时。") + "\n") + "\n---\n\n" } ?? ""
+                try (summaryText + document.markdown).write(to: url, atomically: true, encoding: .utf8)
+            }
             catch { self.error = error.localizedDescription }
         }
     }

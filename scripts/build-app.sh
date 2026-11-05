@@ -20,8 +20,8 @@ cat > "$DESTINATION/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>会声</string>
 <key>CFBundleIconFile</key><string>AppIconFamily</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.4.1</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleShortVersionString</key><string>0.5.0</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>会声需要访问麦克风，将你的声音与会议声音一起保存到本机。</string>
