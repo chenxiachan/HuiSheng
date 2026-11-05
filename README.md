@@ -7,6 +7,22 @@ Record meeting audio and your microphone as M4A, transcribe on your Mac, then se
 
 **Early preview:** v0.5 adds automatic meeting titles and summaries using Apple’s on-device language model. Choose Whisper for automatic-language transcription, either live or after recording. The native interface keeps larger type and instant Chinese / English switching. Screen recording and speaker identification are not included.
 
+[Download v0.5.0](https://github.com/chenxiachan/HuiSheng/releases/tag/v0.5.0) · [Product introduction](docs/PRODUCT.md) · [Release notes / 更新说明](docs/RELEASE-v0.5.0.md)
+
+## Quick start
+
+1. Install and open HuiSheng. Choose **Whisper → Detect automatically** with an installed multilingual model.
+2. Enable **Auto title & summary after recording**. Choose whether to see text during the meeting with **Live transcription**.
+3. Record, then **Stop & Save**. Open **Transcript & Q&A → Summary** for the result, or select text and choose **Ask about selection**.
+
+| What you want | Live transcription | Auto title & summary |
+| --- | --- | --- |
+| Audio only | Off | Off |
+| Transcription and summary after saving | Off | On |
+| Live text, then a summary after saving | On | On |
+
+Whisper handles speech recognition. Automatic titles and summaries use Apple's on-device language model and require macOS 26 with Apple Intelligence ready. Q&A uses the API, local model server, or agent you select. See [Requirements](#requirements) for setup details.
+
 ![English interface with synthetic meeting text and mock answers](docs/assets/interface-en.jpg)
 
 *Interface example: synthetic transcript and mock answers, not a real meeting or model evaluation.*
@@ -48,6 +64,25 @@ Download `HuiSheng-v0.5.0-macOS-arm64.zip` from the [v0.5.0 preview release](htt
 
 This preview is ad-hoc signed and **not notarized by Apple**. macOS may block a downloaded build; building from source is the alternative for this release.
 
+<details>
+<summary>Updating an existing installation and restoring recording permissions</summary>
+
+Stop and save any active recording before replacing the app. Keep the installed copy at `/Applications/会声.app`; recordings remain in your chosen storage folder.
+
+An updated ad-hoc-signed build may need permission again. If HuiSheng's Settings still shows permission as unavailable despite an enabled system switch:
+
+1. Quit HuiSheng. Open **System Settings → Privacy & Security → Screen & System Audio Recording**.
+2. Remove the old HuiSheng entry, then use **+** to add `/Applications/会声.app` and enable it. Complete any Touch ID or password prompt in macOS, then reopen the app.
+3. Check **Microphone** separately if microphone capture is enabled. If toggling its switch and restarting does not help, quit HuiSheng and reset only its microphone authorization:
+
+```bash
+tccutil reset Microphone local.huisheng.recorder
+```
+
+Open HuiSheng, click **Start recording**, and allow microphone access when macOS asks. This command resets HuiSheng's microphone permission, not your recordings. Verify a short saved recording by listening to both sources; an enabled switch or running timer alone does not verify captured audio.
+
+</details>
+
 ## Interface language
 
 Use **中文 / English** at the bottom of the sidebar, or **Settings → Interface language**. Changes apply immediately and persist after restart. Speech language is a separate recording option. Switching the interface does not translate or replace meeting text, selected passages, or existing answers. System-managed dialogs and standard macOS menus may follow the system language.
@@ -64,7 +99,7 @@ The interface uses system colors and appearance, 16 pt main interface text, and 
 
 Turn **Live transcription** on or off before recording. If off, audio is saved normally and can be transcribed later. Choose **Whisper → Detect automatically** to recognize the language locally, or choose Apple and a specific language. Recording begins after preparation; preparation can be cancelled. A transcription failure is displayed and recording continues independently.
 
-Recordings are saved to `~/Movies/会声` by default. Change the destination in Settings. Each meeting has its own folder with a final `.m4a` file, original tracks, `session.json` metadata, and a `meeting.json` transcript/discussion document. The library shows recordings in the selected storage folder.
+Recordings are saved to `~/Movies/会声` by default. Change the destination in Settings. Each meeting has its own folder with a final `.m4a` file, original tracks, `session.json` metadata, a `meeting.json` transcript/discussion document, and `summary.json` once a summary is generated. The library shows recordings in the selected storage folder.
 
 | Shortcut | Action |
 | --- | --- |
@@ -100,7 +135,7 @@ Completed text opens in **Transcript & Q&A**. Cancelling or failing leaves audio
 
 ![Summary beside the original transcript: synthetic Chinese meeting, English interface.](docs/assets/summary-en.jpg)
 
-Enable **Auto title & summary after recording** in the recording options (on by default). After the audio is safely saved, HuiSheng uses the transcript to generate a title and a summary with discussion points, confirmed decisions, action items, and open questions. With live transcription off, it first transcribes the saved audio using your selected engine. **Whisper → Automatic** works for this entire workflow; Whisper handles speech recognition and Apple’s local language model handles the title and summary. Turn both switches off to record audio only.
+Enable **Auto title & summary after recording** in the recording options (on by default). After the audio is safely saved, HuiSheng uses the transcript to generate a title and a summary with discussion points, confirmed decisions, action items, and open questions. With live transcription off, it first transcribes the saved audio using your selected engine. **Whisper → Detect automatically** works for this entire workflow; Whisper handles speech recognition and Apple’s local language model handles the title and summary. Turn both switches off to record audio only.
 
 View the result in **Transcript & Q&A → Summary**, beside the original text. Selecting text and choosing **Ask about selection** opens the Q&A panel. Existing recordings have a **Summary** button; **Regenerate** can update a summary. Summary language is detected from the transcript for Chinese and English; other languages fall back to the interface language. Changing the interface does not translate a saved summary. Names entered by you are preserved; automatic naming updates the library title without moving or renaming audio files.
 
